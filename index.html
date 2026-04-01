@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>∞ Times</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #08080f;
+  --surface: #0f0f1a;
+  --border: #1c1c2e;
+  --accent: #c8f03a;
+  --accent2: #ff4d6d;
+  --text: #e8e8f0;
+  --muted: #888899;
+  --muted2: #22223a;
+  --gold: #f1c40f;
+  --streak: #ff8c00;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'DM Mono', monospace;
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
+}
+
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 999;
+  opacity: 0.6;
+}
+
+/* ── SCREENS ─────────────────────────────────────────────── */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.screen.hidden { display: none !important; }
+#pauseOverlay.hidden { display: none !important; }
+
+/* ── TRANSITIONS ─────────────────────────────────────────── */
+@keyframes fromRight  { from { transform: translateX(60px);  opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toRight    { from { transform: translateX(0);     opacity: 1; } to { transform: translateX(60px);  opacity: 0; } }
+@keyframes fromBottom { from { transform: translateY(60px);  opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes toBottom   { from { transform: translateY(0);     opacity: 1; } to { transform: translateY(60px);  opacity: 0; } }
+@keyframes fromLeft   { from { transform: translateX(-60px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes toLeft     { from { transform: translateX(0);     opacity: 1; } to { transform: translateX(-60px); opacity: 0; } }
+
+.anim-from-right  { animation: fromRight  0.4s cubic-bezier(0.22,1,0.36,1) forwards; }
+.anim-to-right    { animation: toRight    0.28s cubic-bezier(0.55,0,0.8,0.2) forwards; pointer-events:none; }
+.anim-from-bottom { animation: fromBottom 0.4s cubic-bezier(0.22,1,0.36,1) forwards; }
+.anim-to-bottom   { animation: toBottom   0.28s cubic-bezier(0.55,0,0.8,0.2) forwards; pointer-events:none; }
+.anim-from-left   { animation: fromLeft   0.4s cubic-bezier(0.22,1,0.36,1) forwards; }
+.anim-to-left     { animation: toLeft     0.28s cubic-bezier(0.55,0,0.8,0.2) forwards; pointer-events:none; }
+
+/* ── SETUP SCREEN ────────────────────────────────────────── */
+#setup {
+  align-items: center;
+  justify-content: center;
+  padding: 40px 24px;
+  overflow-y: auto;
+  gap: 0;
+}
+
+.setup-title {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(56px, 10vw, 96px);
+  letter-spacing: 8px;
+  line-height: 1;
+  margin-bottom: 4px;
+  background: linear-gradient(135deg, var(--accent) 0%, #7fff6a 50%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.setup-sub {
+  font-size: 11px;
+  letter-spacing: 4px;
+  opacity: 0.3;
+  margin-bottom: 40px;
+  text-transform: uppercase;
+}
+
+.setup-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 36px 48px;
+  width: 100%;
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.section-label {
+  font-size: 10px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  opacity: 0.35;
+  margin-bottom: 14px;
+}
+
+/* ── AXIS SELECTOR ───────────────────────────────────────── */
+.axis-selector {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  justify-items: center;
+  gap: 0;
+}
+
+.axis-btn {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 120px;
+  letter-spacing: 3px;
+  -webkit-text-stroke: 3px currentColor;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0;
+  line-height: 1;
+  width: 100%;
+  text-align: center;
+  transition: color 0.15s, transform 0.15s;
+  user-select: none;
+}
+.axis-btn.active { color: var(--accent); }
+.axis-btn:hover:not(.active) { color: rgba(200,240,58,0.4); transform: translateY(-3px); }
+.axis-btn:hover { transform: translateY(-3px); }
+
+.axis-x {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 90px;
+  color: var(--muted);
+  opacity: 0.4;
+  padding: 0 12px;
+  line-height: 1;
+}
+
+
+/* ── NUMBER ROW ──────────────────────────────────────────── */
+.num-row-wrap {
+  position: relative;
+  user-select: none;
+  cursor: pointer;
+}
+
+.num-row {
+  display: flex;
+  gap: 5px;
+  pointer-events: none; /* row itself doesn't capture — wrap does via mousemove */
+}
+
+
+
+
+
+
+
+.num-hint {
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: rgba(232,232,240,0.28);
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+
+
+
+
+
+/* ── GAME SCREEN ─────────────────────────────────────────── */
+.stats-bar {
+  display: flex; align-items: stretch;
+  border-bottom: 1px solid var(--border);
+  background: #070710; flex-shrink: 0;
+}
+.stat-cell {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 12px 8px; border-right: 1px solid var(--border); gap: 2px;
+}
+.stat-cell:last-child { border-right: none; }
+.stat-label { font-size: 8px; letter-spacing: 3px; text-transform: uppercase; opacity: 0.28; }
+.stat-value { font-family: 'Bebas Neue', sans-serif; font-size: 26px; line-height: 1; letter-spacing: 1px; }
+.stat-value.qtimer-val { color: var(--accent2); }
+.stat-value.qpm-val    { color: var(--accent); }
+.stat-value.time-val   { color: var(--text); }
+
+.q-timer-bar { height: 3px; background: var(--muted); flex-shrink: 0; }
+.q-timer-fill { height: 100%; background: var(--accent); transition: width 0.3s ease; border-radius: 0 2px 2px 0; }
+
+.arena {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  position: relative; overflow: hidden;
+}
+.arena::before {
+  content: ''; position: absolute; width: 500px; height: 500px; border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(200,240,58,0.05), transparent 70%);
+  pointer-events: none;
+}
+
+.question-display {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: clamp(72px, 14vw, 140px);
+  letter-spacing: -2px; line-height: 1;
+  color: var(--accent); margin-bottom: 48px;
+}
+.question-display.pop { animation: qpop 0.18s ease; }
+@keyframes qpop { 0%{transform:scale(1)} 40%{transform:scale(1.07)} 100%{transform:scale(1)} }
+
+.answer-input {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 64px; letter-spacing: 4px; width: 260px; text-align: center;
+  background: transparent; border: none; border-bottom: none;
+  color: var(--text); outline: none; padding: 8px 0;
+  -moz-appearance: textfield; caret-color: transparent;
+}
+@keyframes blink-q {
+  0%, 49% { opacity: 0.3; }
+  50%, 100% { opacity: 0; }
+}
+.input-wrap { position: relative; display: inline-block; }
+.blink-q {
+  position: absolute;
+  left: 50%; transform: translateX(-50%);
+  top: 0;
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 64px;
+  letter-spacing: 4px;
+  color: var(--muted);
+  pointer-events: none;
+  opacity: 0.3;
+  line-height: 1;
+  padding: 8px 0;
+  transition: opacity 0.2s;
+}
+.blink-q.active {
+  opacity: 0.3;
+  animation: blink-q 1s step-end infinite;
+}
+.input-wrap::after {
+  content: '';
+  display: block;
+  height: 2px;
+  background: linear-gradient(to right, var(--accent) var(--progress, 0%), rgba(136,136,153,0.4) var(--progress, 0%));
+  transition: background 0.3s ease;
+}
+.answer-input::-webkit-outer-spin-button,
+.answer-input::-webkit-inner-spin-button { -webkit-appearance: none; }
+
+
+.feedback {
+  position: absolute; inset: 0; pointer-events: none;
+  border-radius: 50%; opacity: 0;
+  width: 300px; height: 300px; left: 50%; top: 50%; transform: translate(-50%,-50%);
+}
+.feedback.correct { animation: flashGreen 0.35s ease; }
+.feedback.wrong   { animation: flashRed   0.35s ease; }
+@keyframes flashGreen { 0%{opacity:0;background:radial-gradient(circle,rgba(200,240,58,0.35),transparent 70%)} 30%{opacity:1} 100%{opacity:0} }
+@keyframes flashRed   { 0%{opacity:0;background:radial-gradient(circle,rgba(255,77,109,0.35),transparent 70%)} 30%{opacity:1} 100%{opacity:0} }
+
+@keyframes shake {
+  0%,100%{transform:translateX(0)} 20%{transform:translateX(-10px)}
+  40%{transform:translateX(10px)}  60%{transform:translateX(-7px)} 80%{transform:translateX(7px)}
+}
+.shake { animation: shake 0.3s ease; }
+
+.streak-badge {
+  position: absolute; top: 20px; right: 24px;
+  font-family: 'Bebas Neue', sans-serif; font-size: 18px;
+  letter-spacing: 3px; color: var(--streak);
+  opacity: 0; transition: opacity 0.3s;
+  display: flex; align-items: center; gap: 6px;
+}
+.streak-badge.visible { opacity: 1; }
+
+.bottom-bar {
+  border-top: 1px solid var(--border); padding: 14px 24px;
+  display: flex; align-items: center; justify-content: flex-end;
+  flex-shrink: 0; background: #070710;
+}
+.btn-settings {
+  font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 2px;
+  text-transform: uppercase; background: transparent;
+  border: 1px solid var(--border); color: var(--text);
+  padding: 8px 16px; border-radius: 8px; cursor: pointer; transition: all 0.15s; opacity: 0.5;
+}
+.btn-settings:hover { opacity: 1; border-color: #444; }
+
+.wrong-log {
+  position: absolute; bottom: 64px; left: 24px;
+  display: flex; flex-direction: column; gap: 4px; pointer-events: none;
+}
+.wrong-tag {
+  font-size: 10px; letter-spacing: 1px; color: var(--accent2); opacity: 0;
+  transform: translateX(-10px);
+  animation: slideIn 0.2s ease forwards, fadeOut 2s 1s ease forwards;
+}
+@keyframes slideIn { to { opacity: 0.6; transform: translateX(0); } }
+@keyframes fadeOut { to { opacity: 0; } }
+
+.score-pop {
+  position: absolute; font-family: 'Bebas Neue', sans-serif;
+  font-size: 28px; color: var(--accent); pointer-events: none;
+  animation: scorePop 0.8s ease forwards; letter-spacing: 2px;
+}
+@keyframes scorePop { 0%{opacity:1;transform:translateY(0) scale(1)} 100%{opacity:0;transform:translateY(-60px) scale(1.3)} }
+
+/* ── STATS SCREEN ────────────────────────────────────────── */
+#stats {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.stats-left {
+  width: 260px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: #070710;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px 36px;
+  gap: 36px;
+}
+
+.stats-heading {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 11px;
+  letter-spacing: 6px;
+  opacity: 0.25;
+  margin-bottom: -24px;
+}
+
+.big-stat-label {
+  font-size: 10px;
+  letter-spacing: 3px;
+  opacity: 0.3;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.big-stat-value {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 72px;
+  line-height: 1;
+  letter-spacing: -1px;
+  color: var(--accent);
+}
+
+.big-stat-value.time-col { color: var(--text); }
+
+.stats-restart {
+  font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 4px;
+  background: var(--accent); color: #000; border: none; border-radius: 10px;
+  padding: 14px 20px; cursor: pointer; transition: all 0.2s; margin-top: 8px;
+}
+.stats-restart:hover { transform: translateY(-2px); box-shadow: 0 6px 24px rgba(200,240,58,0.25); }
+
+.stats-hint {
+  font-size: 9px; letter-spacing: 2px; opacity: 0.18; margin-top: -28px;
+  text-align: center; text-transform: uppercase;
+}
+
+.stats-right {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 40px 48px 32px;
+  gap: 20px;
+  overflow: hidden;
+}
+
+.graph-title {
+  font-size: 10px;
+  letter-spacing: 4px;
+  opacity: 0.28;
+  text-transform: uppercase;
+}
+
+.graph-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+canvas#statsChart {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.graph-avg-label {
+  font-size: 10px;
+  letter-spacing: 2px;
+  opacity: 0.3;
+  display: flex;
+  gap: 20px;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+/* ── QUESTION COUNT SELECTOR ─────────────────────────────── */
+.qcount-row {
+  display: flex;
+  gap: 8px;
+}
+
+
+
+
+/* Top bar */
+#topBar { position:fixed;top:16px;left:32px;right:32px;z-index:50;background:var(--surface);border:1px solid var(--border);border-radius:16px;display:flex;align-items:center;padding:8px 24px;gap:20px;transition:opacity 0.3s ease; }
+#topBar.hidden-bar { opacity:0;pointer-events:none;transition:opacity 0.4s ease; }
+/* Mode buttons */
+.mode-btn { padding:4px 12px;border:none;background:none;font-family:'Bebas Neue',sans-serif;font-size:16px;letter-spacing:1px;cursor:pointer;opacity:0.55;transition:color 0.15s,opacity 0.15s;-webkit-appearance:none;color:var(--muted); }
+.mode-btn:hover { opacity:0.8; }
+.mode-btn.active { color:var(--accent);opacity:1; }
+/* num-cell no box */
+
+
+/* qcount no box */
+
+
+
+/* Setup padding for top bar */
+#setup { padding-top:120px !important; }
+/* Stats overlay */
+#stats { position:fixed!important;inset:0!important;z-index:100;background:var(--bg); }
+#stats.hidden { display:none!important; }
+#stats { opacity:0; transition: opacity 0.3s ease; }
+#stats.visible { opacity:1; }
+/* Axis btn fixed width */
+.axis-btn { width:160px!important;min-width:160px!important;text-align:center!important; }
+.axis-x { padding:0 28px!important; }
+
+/* ── NUM CELLS ───────────────────────────────────── */
+.num-cell {
+  flex: 1;
+  height: 24px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0.65;
+  pointer-events: none;
+  transition: color 0.08s, opacity 0.08s;
+}
+.num-cell.in-range { color: var(--accent); opacity: 1; }
+
+/* ── QCOUNT BUTTONS ──────────────────────────────── */
+.qcount-btn {
+  padding: 4px 10px;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 16px;
+  letter-spacing: 1px;
+  cursor: pointer;
+  opacity: 0.65;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: color 0.15s, opacity 0.15s;
+}
+.qcount-btn:hover { opacity: 0.85; }
+.qcount-btn.active { color: var(--accent); opacity: 1; }
+
+/* ── AXIS BUTTONS fixed width ────────────────────── */
+.axis-btn {
+  font-family: 'Bebas Neue', sans-serif !important;
+  font-size: 120px !important;
+  letter-spacing: 3px !important;
+  -webkit-text-stroke: 3px currentColor !important;
+  background: none !important;
+  border: none !important;
+  cursor: pointer !important;
+  color: var(--muted) !important;
+  padding: 0 !important;
+  line-height: 1 !important;
+  width: 160px !important;
+  min-width: 160px !important;
+  text-align: center !important;
+  transition: color 0.15s !important;
+  user-select: none !important;
+}
+.axis-btn.active { color: var(--accent) !important; }
+#factorKnown, #factorProduct { color: var(--accent) !important; }
+.axis-x { padding: 0 28px !important; }
+</style>
+</head>
+<body>
+<div id="topBar">
+  <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex-shrink:0;">
+    <button class="mode-btn active" id="modeNormal" onclick="setMode('normal')" oncontextmenu="soloMode('normal');return false;">Normal</button>
+    <button class="mode-btn" id="modeFactors" onclick="setMode('factors')" oncontextmenu="soloMode('factors');return false;">Factor</button>
+  </div>
+  <div style="width:1px;height:28px;background:#444466;flex-shrink:0;"></div>
+  <div class="num-row-wrap" style="flex:1;display:flex;flex-direction:column;gap:0;">
+    <div class="num-row" id="numRow1"></div>
+    <div class="num-row" id="numRow2"></div>
+  </div>
+  <div style="width:1px;height:28px;background:#444466;flex-shrink:0;"></div>
+  <div id="qcountRow" style="display:flex;gap:8px;flex-shrink:0;">
+    <button class="qcount-btn active" data-count="10" onclick="selectQCount(10)">10</button>
+    <button class="qcount-btn" data-count="25" onclick="selectQCount(25)">25</button>
+    <button class="qcount-btn" data-count="50" onclick="selectQCount(50)">50</button>
+    <button class="qcount-btn" data-count="100" onclick="selectQCount(100)">100</button>
+    <button class="qcount-btn" data-count="0" onclick="selectQCount(0)">∞</button>
+  </div>
+  <div style="width:1px;height:28px;background:#444466;flex-shrink:0;"></div>
+  <button onclick="toggleHelp()" style="padding:4px 10px;border:none;background:none;font-size:20px;cursor:pointer;opacity:0.8;color:var(--accent);-webkit-appearance:none;">𝐢</button>
+</div>
+
+<!-- ── HELP ──────────────────────────────────────────────────── -->
+<div id="helpOverlay" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(8,8,15,0.85);">
+  <div onclick="toggleHelp()" style="position:absolute;inset:0;"></div>
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:40px 40px 28px;max-width:520px;width:90%;">
+
+    <button onclick="toggleHelp()" style="position:absolute;top:16px;right:20px;background:none;border:none;font-size:20px;cursor:pointer;opacity:0.4;color:var(--text);">✕</button>
+
+    <!-- Slides -->
+    <div id="helpSlides">
+
+      <!-- Slide 1: Game Modes -->
+      <div class="help-slide" style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text);">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:10px;">GAME MODES</div>
+        <svg width="100%" viewBox="0 0 420 85" style="display:block;margin:10px 0 12px;">
+          <text x="10" y="18" fill="#888899" font-family="DM Mono,monospace" font-size="10" letter-spacing="2" opacity="0.7">NORMAL</text>
+          <text x="10" y="60" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">7</text>
+          <text x="56" y="60" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">×</text>
+          <text x="74" y="60" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">8</text>
+          <text x="120" y="60" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">=</text>
+          <text x="140" y="60" fill="#e8e8f0" font-family="Bebas Neue,sans-serif" font-size="44" opacity="0.25">?</text>
+          <line x1="140" y1="70" x2="168" y2="70" stroke="#888899" stroke-width="1.5" opacity="0.35"/>
+          <line x1="215" y1="8" x2="215" y2="80" stroke="#1c1c2e" stroke-width="1.5"/>
+          <text x="225" y="18" fill="#888899" font-family="DM Mono,monospace" font-size="10" letter-spacing="2" opacity="0.7">FACTOR</text>
+          <text x="224" y="60" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">7</text>
+          <text x="270" y="60" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">×</text>
+          <text x="288" y="60" fill="#e8e8f0" font-family="Bebas Neue,sans-serif" font-size="44" opacity="0.25">?</text>
+          <line x1="288" y1="70" x2="316" y2="70" stroke="#888899" stroke-width="1.5" opacity="0.35"/>
+          <text x="336" y="60" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">=</text>
+          <text x="358" y="60" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">56</text>
+        </svg>
+        <div style="opacity:0.75;line-height:1.8;"><span style="color:#c8f03a;">Normal</span> — type the product of A × B.<br><span style="color:#c8f03a;">Factor</span> — given A and the product, find the missing factor.<br><br>Click to toggle between modes. Right-click to solo one. Select both for a mixed session.</div>
+      </div>
+
+      <!-- Slide 2: Number Range -->
+      <div class="help-slide" style="display:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:10px;">NUMBER RANGE</div>
+
+        <!-- Image 1: One number active -->
+        <div style="display:flex;gap:12px;margin:10px 0 8px;">
+          <div style="flex:1;">
+            <div style="font-family:'DM Mono',monospace;font-size:9px;color:#888899;letter-spacing:2px;opacity:0.6;margin-bottom:4px;">ONE ACTIVE</div>
+            <svg width="100%" viewBox="0 0 190 62">
+              <!-- A active, B dim -->
+              <text x="20" y="52" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="48">7</text>
+              <text x="62" y="52" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.4">×</text>
+              <text x="90" y="52" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="48" opacity="0.25">5</text>
+              <!-- underline on A -->
+              <line x1="14" y1="58" x2="56" y2="58" stroke="#c8f03a" stroke-width="1.5" opacity="0.6"/>
+
+            </svg>
+          </div>
+          <div style="flex:1;">
+            <div style="font-family:'DM Mono',monospace;font-size:9px;color:#888899;letter-spacing:2px;opacity:0.6;margin-bottom:4px;">BOTH ACTIVE</div>
+            <svg width="100%" viewBox="0 0 190 62">
+              <!-- Both active -->
+              <text x="20" y="52" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="48">7</text>
+              <text x="62" y="52" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.4">×</text>
+              <text x="90" y="52" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="48">5</text>
+              <!-- underline on both -->
+              <line x1="14" y1="58" x2="56" y2="58" stroke="#c8f03a" stroke-width="1.5" opacity="0.6"/>
+              <line x1="84" y1="58" x2="136" y2="58" stroke="#c8f03a" stroke-width="1.5" opacity="0.6"/>
+
+            </svg>
+          </div>
+        </div>
+
+        <!-- Image 2: Number range bar -->
+        <svg width="100%" viewBox="0 0 420 42" style="display:block;margin:4px 0 10px;">
+          <rect x="0" y="2" width="420" height="38" rx="8" fill="#12121f" stroke="#1c1c2e" stroke-width="1"/>
+          <!-- 1-5 selected -->
+          <rect x="8" y="10" width="28" height="22" rx="4" fill="#c8f03a" fill-opacity="0.15" stroke="#c8f03a" stroke-width="0.8"/>
+          <text x="22" y="25" text-anchor="middle" fill="#c8f03a" font-family="DM Mono,monospace" font-size="12">1</text>
+          <rect x="50" y="10" width="28" height="22" rx="4" fill="#c8f03a" fill-opacity="0.15" stroke="#c8f03a" stroke-width="0.8"/>
+          <text x="64" y="25" text-anchor="middle" fill="#c8f03a" font-family="DM Mono,monospace" font-size="12">2</text>
+          <rect x="92" y="10" width="28" height="22" rx="4" fill="#c8f03a" fill-opacity="0.15" stroke="#c8f03a" stroke-width="0.8"/>
+          <text x="106" y="25" text-anchor="middle" fill="#c8f03a" font-family="DM Mono,monospace" font-size="12">3</text>
+          <rect x="134" y="10" width="28" height="22" rx="4" fill="#c8f03a" fill-opacity="0.15" stroke="#c8f03a" stroke-width="0.8"/>
+          <text x="148" y="25" text-anchor="middle" fill="#c8f03a" font-family="DM Mono,monospace" font-size="12">4</text>
+          <rect x="176" y="10" width="28" height="22" rx="4" fill="#c8f03a" fill-opacity="0.15" stroke="#c8f03a" stroke-width="0.8"/>
+          <text x="190" y="25" text-anchor="middle" fill="#c8f03a" font-family="DM Mono,monospace" font-size="12">5</text>
+          <text x="232" y="25" text-anchor="middle" fill="#888899" font-family="DM Mono,monospace" font-size="12" opacity="0.45">6</text>
+          <text x="274" y="25" text-anchor="middle" fill="#888899" font-family="DM Mono,monospace" font-size="12" opacity="0.45">7</text>
+          <text x="316" y="25" text-anchor="middle" fill="#888899" font-family="DM Mono,monospace" font-size="12" opacity="0.45">8</text>
+          <text x="358" y="25" text-anchor="middle" fill="#888899" font-family="DM Mono,monospace" font-size="12" opacity="0.45">9</text>
+          <text x="400" y="25" text-anchor="middle" fill="#888899" font-family="DM Mono,monospace" font-size="12" opacity="0.45">10</text>
+          <!-- drag arrow -->
+          <path d="M50 36 L190 36" stroke="#c8f03a" stroke-width="1" stroke-opacity="0.35" fill="none" stroke-dasharray="3 3"/>
+          <polygon points="190,33 196,36 190,39" fill="#c8f03a" opacity="0.35"/>
+        </svg>
+
+        <div style="opacity:0.75;line-height:1.8;">Click or right-click the big number to activate or deactivate it. When one is active, the number range controls that side only. When both are active, the range controls both simultaneously.<br><br><span style="color:#e8e8f0;">Click</span> a number to toggle it. <span style="color:#e8e8f0;">Drag</span> to select a range.</div>
+      </div>
+
+      <!-- Slide 3: Question Count -->
+      <div class="help-slide" style="display:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:10px;">QUESTION COUNT</div>
+        <svg width="100%" viewBox="0 0 420 60" style="display:block;margin:10px 0 12px;">
+          <text x="30" y="36" text-anchor="middle" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="22" opacity="0.5">10</text>
+          <rect x="68" y="14" width="44" height="30" rx="8" fill="#c8f03a" fill-opacity="0.12" stroke="#c8f03a" stroke-width="1"/>
+          <text x="90" y="34" text-anchor="middle" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="22">25</text>
+          <text x="150" y="36" text-anchor="middle" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="22" opacity="0.5">50</text>
+          <text x="210" y="36" text-anchor="middle" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="22" opacity="0.5">100</text>
+          <text x="270" y="36" text-anchor="middle" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="22" opacity="0.5">∞</text>
+          <text x="90" y="54" text-anchor="middle" fill="#c8f03a" font-family="DM Mono,monospace" font-size="9" opacity="0.7">active</text>
+        </svg>
+        <div style="opacity:0.75;line-height:1.8;">Choose how many questions per session — 10, 25, 50, 100, or infinite.</div>
+      </div>
+
+      <!-- Slide 4: Starting -->
+      <div class="help-slide" style="display:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:10px;">STARTING A GAME</div>
+        <svg width="100%" viewBox="0 0 420 80" style="display:block;margin:10px 0 12px;">
+          <text x="30" y="55" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">6</text>
+          <text x="82" y="55" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">×</text>
+          <text x="106" y="55" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">7</text>
+          <text x="158" y="55" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">=</text>
+          <text x="215" y="55" fill="#e8e8f0" font-family="Bebas Neue,sans-serif" font-size="44" opacity="0.25">?</text>
+          <line x1="210" y1="65" x2="250" y2="65" stroke="#888899" stroke-width="1.5" opacity="0.35"/>
+        </svg>
+        <div style="opacity:0.75;line-height:1.8;">Type the correct answer to start the session automatically.<br><br>Blinking <span style="color:#c8f03a;">?</span> = ready to type. Dim <span style="opacity:0.4;">?</span> = click the box first.</div>
+      </div>
+
+      <!-- Slide 5: During + Smart -->
+      <div class="help-slide" style="display:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);">
+        <div style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:10px;">DURING A SESSION</div>
+        <svg width="100%" viewBox="0 0 420 80" style="display:block;margin:10px 0 12px;">
+          <text x="30" y="48" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">9</text>
+          <text x="78" y="48" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">×</text>
+          <text x="98" y="48" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="44">6</text>
+          <text x="144" y="48" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="32" opacity="0.45" text-anchor="middle">=</text>
+          <text x="184" y="48" fill="#e8e8f0" font-family="Bebas Neue,sans-serif" font-size="44">54</text>
+          <line x1="184" y1="60" x2="234" y2="60" stroke="#888899" stroke-width="2" opacity="0.2"/>
+          <line x1="184" y1="60" x2="218" y2="60" stroke="#c8f03a" stroke-width="2"/>
+          <rect x="318" y="12" width="78" height="24" rx="5" fill="#12121f" stroke="#1c1c2e" stroke-width="1"/>
+          <text x="357" y="28" text-anchor="middle" fill="#888899" font-family="DM Mono,monospace" font-size="12">Tab</text>
+          <rect x="318" y="44" width="78" height="24" rx="5" fill="#12121f" stroke="#1c1c2e" stroke-width="1"/>
+          <text x="357" y="60" text-anchor="middle" fill="#888899" font-family="DM Mono,monospace" font-size="12">Space</text>
+          <text x="178" y="75" fill="#888899" font-family="DM Mono,monospace" font-size="10" opacity="0.5">progress</text>
+        </svg>
+        <div style="opacity:0.75;line-height:1.8;"><span style="color:#e8e8f0;">Tab</span> — end early and see stats. <span style="color:#e8e8f0;">Space</span> — pause.<br><br>Questions you struggle with appear more often. The system learns from your speed and accuracy across sessions.</div>
+      </div>
+
+    </div>
+
+    <!-- Dots + nav -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:24px;">
+      <button onclick="helpNav(-1)" style="background:none;border:none;cursor:pointer;font-size:18px;opacity:0.5;color:var(--text);padding:0;">←</button>
+      <div id="helpDots" style="display:flex;gap:8px;">
+        <span class="help-dot active"></span>
+        <span class="help-dot"></span>
+        <span class="help-dot"></span>
+        <span class="help-dot"></span>
+        <span class="help-dot"></span>
+      </div>
+      <button onclick="helpNav(1)" style="background:none;border:none;cursor:pointer;font-size:18px;opacity:0.5;color:var(--text);padding:0;">→</button>
+    </div>
+
+  </div>
+</div>
+
+<style>
+.help-dot { width:6px;height:6px;border-radius:50%;background:var(--muted);opacity:0.3;transition:opacity 0.2s; }
+.help-dot.active { opacity:1;background:var(--accent); }
+</style>
+
+
+<!-- ── SETUP ──────────────────────────────────────────────── -->
+<div id="setup" class="screen">
+  <!-- Normal mode: A × B = [input] -->
+    <div id="rowNormal" style="display:flex;align-items:center;justify-content:center;gap:0;">
+      <button class="axis-btn active" id="axisA" onclick="selectAxis('a')" oncontextmenu="soloAxis('a');return false;"><span id="previewA">A</span></button>
+      <span class="axis-x">×</span>
+      <button class="axis-btn" id="axisB" onclick="selectAxis('b')" oncontextmenu="soloAxis('b');return false;"><span id="previewB">B</span></button>
+      <span class="axis-x">=</span>
+      <div class="input-wrap">
+        <span class="blink-q" id="blinkQ">?</span>
+        <input class="answer-input" id="setupAnswerInput" type="number" placeholder=""
+          autocomplete="off" oninput="setupAnswerTyped()" onkeydown="setupAnswerKey(event)"
+          onfocus="document.getElementById('blinkQ').classList.add('active')"
+          onblur="document.getElementById('blinkQ').classList.remove('active')"
+
+          style="width:180px;text-align:center;background:transparent;">
+      </div>
+    </div>
+    <!-- Factors mode: known × [input] = product -->
+    <div id="rowFactors" style="display:none !important;align-items:center;justify-content:center;gap:0;">
+      <span class="axis-btn" id="factorKnown" style="color:var(--accent);cursor:pointer;" onclick="selectAxis('a')" oncontextmenu="soloAxis('a');return false;"></span>
+      <span class="axis-x">×</span>
+      <div class="input-wrap">
+        <span class="blink-q" id="blinkQF">?</span>
+        <input class="answer-input" id="setupAnswerInputF" type="number" placeholder=""
+          autocomplete="off" oninput="setupAnswerTypedF()" onkeydown="setupAnswerKey(event)"
+          onfocus="document.getElementById('blinkQF').classList.add('active')"
+          onblur="document.getElementById('blinkQF').classList.remove('active')"
+
+          style="width:180px;text-align:center;background:transparent;">
+      </div>
+      <span class="axis-x">=</span>
+      <span class="axis-btn" id="factorProduct" style="color:var(--accent);cursor:pointer;" onclick="selectAxis('b')" oncontextmenu="soloAxis('b');return false;"></span>
+    </div>
+</div>
+
+<!-- ── GAME ───────────────────────────────────────────────── -->
+<div id="game" class="screen hidden">
+
+  <div class="arena">
+    <div class="feedback" id="feedback"></div>
+    <div class="streak-badge" id="streakBadge">
+      <span id="streakBadgeVal">0</span>
+      <span style="font-size:14px;opacity:0.6;letter-spacing:2px">STREAK</span>
+    </div>
+    <div class="question-display" id="questionDisplay">— × —</div>
+    <div>
+      <input class="answer-input" id="answerInput" type="number" placeholder="?"
+        autocomplete="off" oninput="handleInput()" onkeydown="handleKey(event)">
+    </div>
+    <div class="wrong-log" id="wrongLog"></div>
+  </div>
+
+</div>
+
+
+  <!-- Pause overlay -->
+  <div id="pauseOverlay" class="hidden" style="
+    position:absolute; inset:0; z-index:50;
+    background:rgba(8,8,15,0.85); backdrop-filter:blur(8px);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+  ">
+    <div style="font-family:'Bebas Neue',sans-serif;font-size:64px;letter-spacing:10px;opacity:0.9;">PAUSED</div>
+    <div style="font-size:11px;letter-spacing:3px;opacity:0.3;">PRESS SPACE TO RESUME</div>
+  </div>
+
+<!-- ── STATS ──────────────────────────────────────────────── -->
+<div id="stats" class="screen hidden">
+  <div class="stats-left">
+    <div class="stats-heading">Session</div>
+    <div>
+      <div class="big-stat-label">Avg / question</div>
+      <div class="big-stat-value time-col" id="statsAvg">—</div>
+    </div>
+    <div>
+      <div class="big-stat-label">Total Time</div>
+      <div class="big-stat-value" id="statsTime">0:00</div>
+    </div>
+    <div>
+      <div class="big-stat-label">Questions</div>
+      <div class="big-stat-value" id="statsQuestions">0</div>
+    </div>
+    <button class="stats-restart" onclick="newGame()">New Session</button>
+    <div class="stats-hint">or press tab</div>
+  </div>
+  <div class="stats-right">
+    <div class="graph-title">Seconds per question</div>
+    <div class="graph-wrap">
+      <canvas id="statsChart"></canvas>
+    </div>
+    <div class="graph-avg-label">
+      <span><span class="legend-dot" style="background:rgba(200,240,58,0.9)"></span>trend</span>
+      <span><span class="legend-dot" style="background:rgba(200,240,58,0.35)"></span>per question</span>
+      <span><span class="legend-dot" style="background:#ff4d6d;opacity:0.6"></span>slow</span>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── STATE ────────────────────────────────────────────────────
+let excluded = new Set();
+let currentQ = null;
+let score = 0, streak = 0, questionCount = 0, correctCount = 0;
+let sessionStart = null, questionStart = null;
+let totalTimerInterval = null, qTimerInterval = null;
+const Q_TIMER_MAX = 30;
+let paused = false;
+let isPlaying = false;
+const gameModes = new Set(['normal']); // can contain 'normal' and/or 'factors'
+let questionLimit = 10; // 0 = infinite
+let pauseStart = null;
+let qElapsedBeforePause = 0;
+let sessionElapsedBeforePause = 0;
+
+// Per-session log: array of { a, b, seconds, attempts }
+let sessionLog = [];
+let currentAttempts = 0;
+
+// ── SPACED REPETITION ────────────────────────────────────────
+let srCards = {};
+const SR_BASE_EASE = 2.5, SR_MIN_EASE = 1.3;
+
+function srKey(a, b, mode) { const base = a <= b ? `${a},${b}` : `${b},${a}`; return mode ? `${mode}:${base}` : base; }
+function getCard(a, b, mode) {
+  const k = srKey(a, b, mode);
+  if (!srCards[k]) srCards[k] = { interval: 0, ease: SR_BASE_EASE, due: 0, wrongStreak: 0, correctStreak: 0 };
+  return srCards[k];
+}
+function updateCard(a, b, correct, secs, attempts, avgSecs, mode) {
+  const card = getCard(a, b, mode);
+  const now = Date.now();
+
+  // Time ratio: how slow was this vs session average (only if we have avg)
+  const timeRatio = (avgSecs && avgSecs > 0 && secs) ? secs / avgSecs : 1.0;
+  // Attempts penalty: extra wrong tries on this question
+  const attemptPenalty = attempts ? Math.max(0, attempts - 1) : 0;
+
+  if (correct) {
+    card.wrongStreak = 0;
+
+    // Ease delta: continuous scaling based on timeRatio + attempts
+    // timeRatio=1 → easeDelta≈0.1, fast→higher, slow→lower/negative
+    let easeDelta;
+    if (avgSecs && secs) {
+      easeDelta = 0.1 / (timeRatio * timeRatio) - 0.05 * attemptPenalty;
+      easeDelta = Math.max(-0.4, Math.min(0.35, easeDelta)); // clamp to reasonable range
+    } else {
+      easeDelta = 0.1 - 0.05 * attemptPenalty;
+    }
+    card.correctStreak = (card.correctStreak || 0) + 1;
+    card.ease = Math.max(SR_MIN_EASE, card.ease + easeDelta);
+    // Streak multiplier: each consecutive correct answer grows interval faster
+    const streakMult = Math.pow(1.4, Math.min(card.correctStreak, 10));
+    card.interval = card.interval === 0 ? 60000
+      : card.interval < 120000 ? 120000
+      : Math.round(card.interval * card.ease * streakMult);
+    card.due = now + card.interval;
+
+    // Store time signal for weighting in pickQuestion
+    card.lastTimeRatio = (avgSecs && secs) ? timeRatio : null;
+    card.lastAttempts = attempts || 1;
+  } else {
+    card.wrongStreak = (card.wrongStreak || 0) + 1;
+    if (card.wrongStreak === 1) {
+      // Slip — mild penalty, keep most of streak
+      card.correctStreak = Math.max(0, (card.correctStreak || 0) - 1);
+      card.interval = Math.max(0, Math.round(card.interval * 0.75));
+      card.ease = Math.max(SR_MIN_EASE, card.ease - 0.05);
+      card.due = now + 20000;
+    } else {
+      // Genuine struggle — full reset
+      card.correctStreak = 0;
+      card.interval = Math.max(0, Math.round(card.interval * 0.4));
+      card.ease = Math.max(SR_MIN_EASE, card.ease - 0.2);
+      card.due = now + 15000;
+    }
+  }
+}
+
+// Session time tracking for rolling average
+const SESSION_WARMUP = 5; // questions before time weighting kicks in
+function getSessionAvg() {
+  if (sessionLog.length < SESSION_WARMUP) return null;
+  return sessionLog.reduce((s, q) => s + q.seconds, 0) / sessionLog.length;
+}
+
+// Retroactively update early questions once we have a stable average
+function retroactiveUpdate() {
+  if (sessionLog.length !== SESSION_WARMUP) return; // only fire once
+  const avg = sessionLog.reduce((s, q) => s + q.seconds, 0) / sessionLog.length;
+  for (const q of sessionLog) {
+    updateCard(q.a, q.b, true, q.seconds, q.attempts || 1, avg, q.chosenMode);
+  }
+}
+
+// ── WEIGHTED QUESTION PICKER ─────────────────────────────────
+function pickQuestion() {
+  const aVals = validValues('a'), bVals = validValues('b');
+  const now = Date.now();
+  const candidates = [];
+  for (const a of aVals) {
+    for (const b of bVals) {
+      const card = getCard(a, b, currentQ && currentQ.chosenMode);
+      let weight = 1.0;
+      if (card.due > 0 && now >= card.due) weight += Math.min(8, (now - card.due) / 10000);
+      if (card.wrongStreak > 0) weight += card.wrongStreak * 4;
+      if (card.interval === 0 && card.due === 0) weight += 1.5;
+      if (card.due > 0 && now < card.due && card.wrongStreak === 0) {
+        const streak = card.correctStreak || 0;
+        const suppression = Math.max(0.005, 0.1 / Math.pow(1.8, streak));
+        weight *= suppression;
+      }
+      // Time-based weighting — continuous scaling
+      if (card.lastTimeRatio != null) {
+        weight += Math.max(0, card.lastTimeRatio - 1) * 3;
+      }
+      if (card.lastAttempts > 1) weight += (card.lastAttempts - 1) * 2;
+      candidates.push({ a, b, weight });
+    }
+  }
+  const pool = candidates.filter(c => !currentQ || !(c.a === currentQ.a && c.b === currentQ.b));
+  const source = pool.length > 0 ? pool : candidates;
+  const total = source.reduce((s, c) => s + c.weight, 0);
+  let r = Math.random() * total;
+  for (const c of source) { r -= c.weight; if (r <= 0) return { a: c.a, b: c.b }; }
+  return source[source.length - 1];
+}
+
+// ── EXCLUSION GRID ───────────────────────────────────────────
+// ── SETUP STATE ──────────────────────────────────────────────
+// ranges[a/b] = Set of numbers in range; excluded = Set of numbers excluded from both
+let ranges = { a: new Set([1,2,3,4,5,6,7,8,9,10]), b: new Set([1,2,3,4,5,6,7,8,9,10]) };
+let linked = true;
+let activeAxis = 'b';
+
+// Drag state
+let isDragging = false;
+let dragMode = null; // 'add' or 'remove'
+let dragAxis = null;
+let lastDraggedN = null;
+
+// activeAxes: Set of which axes are currently selected ('a', 'b', or both)
+let activeAxes = new Set(['a', 'b']);
+
+function selectAxis(axis) {
+  if (isPlaying) return;
+  if (activeAxes.has(axis)) {
+    // Deselect — allowed even if it means neither is active
+    activeAxes.delete(axis);
+  } else {
+    // Select — if both now active, sync this axis to the other's range
+    if (activeAxes.size === 1) {
+      const other = axis === 'a' ? 'b' : 'a';
+      ranges[axis] = new Set(ranges[other]);
+    }
+    activeAxes.add(axis);
+  }
+  linked = activeAxes.size === 2;
+  // Active axis for editing = the one just clicked if it's now active,
+  // otherwise whichever remains
+  if (activeAxes.has(axis)) {
+    activeAxis = axis;
+  } else if (activeAxes.size > 0) {
+    activeAxis = [...activeAxes][0];
+  }
+  updateAxisHighlight();
+  renderNumRow();
+}
+
+function soloAxis(axis) {
+  if (isPlaying) return;
+  // Right-click: select only this axis, deselect the other
+  const other = axis === 'a' ? 'b' : 'a';
+  activeAxes.clear();
+  activeAxes.add(axis);
+  linked = false;
+  activeAxis = axis;
+  updateAxisHighlight();
+  renderNumRow();
+}
+
+function updateAxisHighlight() {
+  document.getElementById('axisA').classList.toggle('active', activeAxes.has('a'));
+  document.getElementById('axisB').classList.toggle('active', activeAxes.has('b'));
+  // In factor mode, highlight factorKnown/Product to show which axis is active
+  const fk = document.getElementById('factorKnown');
+  const fp = document.getElementById('factorProduct');
+  if (fk) fk.style.opacity = activeAxes.has('a') ? '1' : '0.4';
+  if (fp) fp.style.opacity = activeAxes.has('b') ? '1' : '0.4';
+}
+
+function buildNumRow() {
+  const row1 = document.getElementById('numRow1');
+  const row2 = document.getElementById('numRow2');
+  if (!row1) return;
+  row1.innerHTML = ''; row2.innerHTML = '';
+  for (let i = 1; i <= 10; i++) {
+    [[row1,i],[row2,i+10]].forEach(([row,n]) => {
+      const cell = document.createElement('div');
+      cell.className = 'num-cell'; cell.textContent = n; cell.dataset.n = n;
+      row.appendChild(cell);
+    });
+  }
+  const wrap = document.querySelector('.num-row-wrap');
+
+  // Returns cell index 1-20, or null if in a gap between cells.
+  // Only clamps to 1/20 when cursor is fully outside the row bounds.
+  function cellFromX(clientX, clientY) {
+    const cells = document.querySelectorAll('.num-cell');
+    for (const cell of cells) {
+      const r = cell.getBoundingClientRect();
+      if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) return +cell.dataset.n;
+    }
+    let closest = null, minD = Infinity;
+    for (const cell of cells) {
+      const r = cell.getBoundingClientRect();
+      const d = Math.hypot(clientX-(r.left+r.right)/2, clientY-(r.top+r.bottom)/2);
+      if (d < minD) { minD = d; closest = +cell.dataset.n; }
+    }
+    return minD < 60 ? closest : null;
+  }
+
+  function applyRange(from, to) {
+    const mn = Math.min(from, to), mx = Math.max(from, to);
+    for (let n = mn; n <= mx; n++) applyDragToCell(n);
+  }
+
+  let hasDragged = false;
+  let mouseDownX = null;
+  let mouseDownY = null;
+  let mouseDownN = null;
+  // preState: snapshot before drag starts, so we can replay from scratch on each move
+  let preState = null;
+  // dragPath: ordered unique list of cells visited (front = start, back = current tip)
+  let dragPath = [];
+
+  wrap.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    if (activeAxes.size === 0) return; // no axis selected — nothing to edit
+    // Ignore if click is outside the vertical bounds of the row
+    const n = cellFromX(e.clientX, e.clientY);
+    if (n === null) return; // clicked in a gap — ignore entirely
+    hasDragged = false;
+    mouseDownX = e.clientX;
+    mouseDownY = e.clientY;
+    mouseDownN = n;
+    isDragging = true;
+    dragAxis = activeAxis;
+    lastDraggedN = n;
+    preState = null;
+    dragPath = [];
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const n = cellFromX(e.clientX, e.clientY);
+
+    if (!hasDragged) {
+      if (Math.abs(e.clientX - mouseDownX) > 4 || Math.abs(e.clientY - (mouseDownY||0)) > 4) {
+        hasDragged = true;
+        // Snapshot BEFORE any changes
+        preState = { a: new Set(ranges['a']), b: new Set(ranges['b']) };
+        dragPath = [mouseDownN];
+        replayPath();
+      } else {
+        return;
+      }
+    }
+
+    if (n === null || n === lastDraggedN) return;
+
+    const existingIdx = dragPath.indexOf(n);
+    if (existingIdx !== -1) {
+      // Dragging back over a cell already in path — trim everything after it
+      dragPath = dragPath.slice(0, existingIdx + 1);
+    } else {
+      // Check if we're moving back past the start (n not in path, but between edge and start)
+      const startN = dragPath[0];
+      const tip = dragPath[dragPath.length - 1];
+      const movingBack = (tip > startN && n < tip) || (tip < startN && n > tip);
+      if (movingBack) {
+        // Fill gap toward the start, these are new cells being added in reverse
+        const mn = Math.min(tip, n), mx = Math.max(tip, n);
+        for (let i = mn; i <= mx; i++) {
+          if (i === tip) continue;
+          if (!dragPath.includes(i)) dragPath.push(i);
+        }
+      } else {
+        // Dragging forward — fill gap between tip and n
+        const mn = Math.min(tip, n), mx = Math.max(tip, n);
+        for (let i = mn; i <= mx; i++) {
+          if (!dragPath.includes(i)) dragPath.push(i);
+        }
+      }
+    }
+
+    lastDraggedN = n;
+    replayPath();
+  });
+
+  // Replay: restore to preState then flip every cell in dragPath
+  function replayPath() {
+    const ax = dragAxis;
+    // Always restore both axes to preState first
+    ranges['a'] = new Set(preState['a']);
+    ranges['b'] = new Set(preState['b']);
+    if (linked) {
+      // Flip on both axes
+      for (const n of dragPath) {
+        if (preState[ax].has(n)) { ranges['a'].delete(n); ranges['b'].delete(n); }
+        else                     { ranges['a'].add(n);    ranges['b'].add(n); }
+      }
+    } else {
+      // Flip only on active axis, leave other axis untouched
+      for (const n of dragPath) {
+        if (preState[ax].has(n)) ranges[ax].delete(n);
+        else                     ranges[ax].add(n);
+      }
+    }
+    renderNumRow();
+  }
+
+  document.addEventListener('mouseup', (e) => {
+    if (!isDragging) return;
+    isDragging = false;
+
+    if (!hasDragged) {
+      // Clean click — flip single cell
+      flipCell(mouseDownN);
+      renderNumRow();
+    }
+
+    hasDragged = false;
+    mouseDownX = null;
+    mouseDownN = null;
+    preState = null;
+    dragPath = [];
+    dragAxis = null;
+    lastDraggedN = null;
+    validateStart();
+  });
+
+  renderNumRow();
+}
+
+function flipCell(n) {
+  const ax = dragAxis || activeAxis;
+  if (linked) {
+    if (ranges[ax].has(n)) { ranges['a'].delete(n); ranges['b'].delete(n); }
+    else                   { ranges['a'].add(n);    ranges['b'].add(n); }
+  } else {
+    if (ranges[ax].has(n)) ranges[ax].delete(n);
+    else                   ranges[ax].add(n);
+  }
+  renderNumRow(n);
+}
+
+function renderNumRow(changedN) {
+  const ax = activeAxis;
+  document.querySelectorAll('.num-cell').forEach(cell => {
+    const n = +cell.dataset.n;
+    cell.classList.toggle('in-range', ranges[ax].has(n));
+  });
+  updateFlicker(changedN);
+}
+
+function selectQCount(n) {
+  questionLimit = n;
+  document.querySelectorAll('.qcount-btn').forEach(btn => {
+    btn.classList.toggle('active', +btn.dataset.count === n);
+  });
+}
+
+function validateStart() {
+  const ok = activeAxes.size>0 && validValues('a').length>0 && validValues('b').length>0;
+  const inp = document.getElementById('setupAnswerInput'); if(inp) inp.disabled=!ok;
+  const inpF = document.getElementById('setupAnswerInputF'); if(inpF) inpF.disabled=!ok;
+}
+
+function validValues(axis) {
+  return [...ranges[axis]];
+}
+
+// ── SCREEN TRANSITIONS ───────────────────────────────────────
+function show(id) { document.getElementById(id).classList.remove('hidden'); }
+function hide(id) { document.getElementById(id).classList.add('hidden'); }
+
+function transition(fromId, toId, fromAnim, toAnim, delay=280, cb) {
+  const fromEl = document.getElementById(fromId);
+  const toEl   = document.getElementById(toId);
+  fromEl.classList.add(fromAnim);
+  setTimeout(() => {
+    hide(fromId);
+    fromEl.classList.remove(fromAnim);
+    show(toId);
+    toEl.classList.add(toAnim);
+    toEl.addEventListener('animationend', () => toEl.classList.remove(toAnim), { once: true });
+    if (cb) cb();
+  }, delay);
+}
+
+// ── GAME FLOW ────────────────────────────────────────────────
+function startGame() {
+  isPlaying = true;
+  document.getElementById('topBar').classList.add('hidden-bar');
+  (() => {
+    score=0; streak=0; questionCount=0; correctCount=0; paused=false;
+    document.querySelectorAll('.input-wrap').forEach(w => w.style.setProperty('--progress', '0%'));
+    sessionLog=[];
+    updateLiveStats();
+    sessionStart = Date.now();
+    totalTimerInterval = setInterval(() => {}, 500);
+    nextQuestion();
+    // Force factor elements green regardless of axis highlight state
+    const fk = document.getElementById('factorKnown');
+    const fp = document.getElementById('factorProduct');
+    if(fk) { fk.style.color='var(--accent)'; fk.style.opacity='1'; }
+    if(fp) { fp.style.color='var(--accent)'; fp.style.opacity='1'; }
+    const activeInp = document.getElementById(gameModes.has('normal') ? 'setupAnswerInput' : 'setupAnswerInputF');
+    if(activeInp) { activeInp.value=''; activeInp.focus(); }
+  })();
+}
+
+function updateProgressBar() {
+  let pct;
+  if (questionLimit > 0) {
+    pct = Math.min((correctCount / questionLimit) * 100, 100);
+  } else {
+    // Asymptotic: ~2% at Q1, ~50% at Q50, approaches 100% never reaching it
+    pct = (1 - 1 / (1 + correctCount / 49)) * 100;
+  }
+  document.querySelectorAll('.input-wrap').forEach(w => w.style.setProperty('--progress', pct + '%'));
+}
+
+function nextQuestion() {
+  currentQ = pickQuestion();
+  questionCount++;
+  currentAttempts = 0;
+  currentQ.hideSide = 'b'; // always hide B
+  currentQ.chosenMode = updateQuestionDisplay(currentQ.a, currentQ.b, currentQ.hideSide);
+  clearInterval(qTimerInterval);
+  questionStart = Date.now();
+  qTimerInterval = setInterval(() => { updateProgressBar(); }, 100);
+}
+
+function updateQuestionDisplay(a, b, hideSide, forceMode) {
+  const rowN = document.getElementById('rowNormal');
+  const rowF = document.getElementById('rowFactors');
+  if (!rowN || !rowF) return 'normal';
+  // Pick mode: forced > only-one-active > random blend
+  let mode = forceMode;
+  if (!mode) {
+    if (gameModes.has('normal') && gameModes.has('factors')) mode = Math.random() < 0.5 ? 'normal' : 'factors';
+    else if (gameModes.has('factors')) mode = 'factors';
+    else mode = 'normal';
+  }
+  if (mode === 'factors') {
+    rowN.style.setProperty('display', 'none', 'important');
+    rowF.style.setProperty('display', 'flex', 'important');
+    const known = hideSide === 'b' ? a : b;
+    const fk = document.getElementById('factorKnown'); if(fk) fk.textContent = known;
+    const fp = document.getElementById('factorProduct'); if(fp) fp.textContent = a * b;
+    const inp = document.getElementById('setupAnswerInputF');
+    if (inp) { inp.value = ''; inp.focus(); }
+    const bqf = document.getElementById('blinkQF'); if(bqf) bqf.style.visibility='';
+  } else {
+    rowN.style.setProperty('display', 'flex', 'important');
+    rowF.style.setProperty('display', 'none', 'important');
+    document.getElementById('previewA').textContent = a;
+    document.getElementById('previewB').textContent = b;
+    // During game both numbers should be green
+    if (isPlaying) {
+      document.getElementById('axisA').classList.add('active');
+      document.getElementById('axisB').classList.add('active');
+    }
+    const inp = document.getElementById('setupAnswerInput');
+    if (inp) { inp.value = ''; inp.focus(); }
+    const bq = document.getElementById('blinkQ'); if(bq) bq.style.visibility='';
+  }
+  return mode;
+}
+
+function soloMode(mode) {
+  gameModes.clear();
+  gameModes.add(mode);
+  document.getElementById('modeNormal').classList.toggle('active', gameModes.has('normal'));
+  document.getElementById('modeFactors').classList.toggle('active', gameModes.has('factors'));
+  document.getElementById('modeNormal').style.color = gameModes.has('normal') ? 'var(--accent)' : 'var(--muted)';
+  document.getElementById('modeFactors').style.color = gameModes.has('factors') ? 'var(--accent)' : 'var(--muted)';
+  const aVals = validValues('a'); const bVals = validValues('b');
+  const a = aVals.length ? aVals[aVals.length-1] : 1;
+  const b = bVals.length ? bVals[bVals.length-1] : 1;
+  updateQuestionDisplay(a, b, 'b', mode);
+}
+
+function setMode(mode) {
+  // Toggle mode - but always keep at least one active
+  if (gameModes.has(mode) && gameModes.size > 1) {
+    gameModes.delete(mode);
+  } else {
+    gameModes.add(mode);
+  }
+  document.getElementById('modeNormal').classList.toggle('active', gameModes.has('normal'));
+  document.getElementById('modeFactors').classList.toggle('active', gameModes.has('factors'));
+  document.getElementById('modeNormal').style.color = gameModes.has('normal') ? 'var(--accent)' : 'var(--muted)';
+  document.getElementById('modeFactors').style.color = gameModes.has('factors') ? 'var(--accent)' : 'var(--muted)';
+  // Update preview
+  const aVals = validValues('a');
+  const bVals = validValues('b');
+  const a = aVals.length ? aVals[aVals.length-1] : 1;
+  const b = bVals.length ? bVals[bVals.length-1] : 1;
+  document.getElementById('previewA').textContent = a;
+  document.getElementById('previewB').textContent = b;
+  updateQuestionDisplay(a, b, 'b');
+}
+
+
+// ── SETUP ANSWER HANDLERS ────────────────────────────────────
+function setupAnswerTyped() {
+  const bq = document.getElementById('blinkQ'); if(bq) bq.style.visibility = document.getElementById('setupAnswerInput').value ? 'hidden' : '';
+  if (isPlaying) { handleInput(); return; }
+  const input = document.getElementById('setupAnswerInput');
+  const val = parseInt(input.value);
+  if (isNaN(val)) return;
+  const a = parseInt(document.getElementById('previewA').textContent);
+  const b = parseInt(document.getElementById('previewB').textContent);
+  if (isNaN(a)||isNaN(b)) return;
+  const correct = a * b;
+  if (val === correct && input.value.length === correct.toString().length) {
+    input.value = '';
+    startGame();
+  }
+}
+
+function setupAnswerTypedF() {
+  const bqf = document.getElementById('blinkQF'); if(bqf) bqf.style.visibility = document.getElementById('setupAnswerInputF').value ? 'hidden' : '';
+  if (isPlaying) { handleInputF(); return; }
+  const input = document.getElementById('setupAnswerInputF');
+  const val = parseInt(input.value);
+  if (isNaN(val)) return;
+  const fp = document.getElementById('factorProduct');
+  const fk = document.getElementById('factorKnown');
+  const product = fp ? parseInt(fp.textContent) : 0;
+  const known = fk ? parseInt(fk.textContent) : 1;
+  const correct = product / known;
+  if (val === correct && input.value.length === correct.toString().length) {
+    input.value = '';
+    startGame();
+  }
+}
+
+function handleInputF() {
+  const input = document.getElementById('setupAnswerInputF');
+  const val = parseInt(input.value);
+  if (isNaN(val)||!currentQ) return;
+  const correct = currentQ.hideSide==='b' ? currentQ.b : currentQ.a;
+  if (val===correct && input.value.replace('-','').length===correct.toString().length) checkAnswer();
+}
+
+function setupAnswerKey(e) {
+  if (e.key==='Tab') { e.preventDefault(); if(isPlaying) endSession(); }
+}
+
+// ── INPUT ────────────────────────────────────────────────────
+function handleKey(e) {
+  if (e.key === 'Enter') {
+    const v = document.getElementById('answerInput').value;
+    if (v===''||v==='-') { endSession(); return; }
+    checkAnswer();
+  }
+}
+function handleInput() {
+  if (currentQ && currentQ.chosenMode === 'factors') { handleInputF(); return; }
+  const input = document.getElementById('setupAnswerInput');
+  const val = parseInt(input.value);
+  if (isNaN(val)) return;
+  const correct = currentQ.a * currentQ.b;
+  if (val===correct && input.value.replace('-','').length===correct.toString().length) checkAnswer();
+}
+
+function checkAnswer() {
+  const input = document.getElementById(currentQ && currentQ.chosenMode==='factors' ? 'setupAnswerInputF' : 'setupAnswerInput');
+  const val = parseInt(input.value);
+  if (isNaN(val)) return;
+  const correct = (currentQ && currentQ.chosenMode==='factors') ? (currentQ.hideSide==='b' ? currentQ.b : currentQ.a) : currentQ.a * currentQ.b;
+  currentAttempts++;
+
+  if (val === correct) {
+    const secs = (Date.now() - questionStart) / 1000;
+    sessionLog.push({ a: currentQ.a, b: currentQ.b, seconds: secs, attempts: currentAttempts, chosenMode: currentQ.chosenMode });
+    const avgSecs = getSessionAvg();
+    updateCard(currentQ.a, currentQ.b, true, secs, currentAttempts, avgSecs, currentQ.chosenMode);
+    score++; streak++; correctCount++;
+    retroactiveUpdate();
+    triggerFeedback(true);
+    showScorePop();
+    updateProgressBar();
+    updateLiveStats();
+    // End session if question limit reached
+    if (questionLimit > 0 && correctCount >= questionLimit) {
+      endSession();
+      return;
+    }
+    nextQuestion();
+  } else {
+    updateCard(currentQ.a, currentQ.b, false, null, null, null, currentQ.chosenMode);
+    streak = 0;
+    triggerFeedback(false);
+    shakeInput();
+    logWrong(currentQ.a, currentQ.b, correct, val);
+    input.value = '';
+    updateLiveStats();
+  }
+}
+
+function triggerFeedback(ok) {
+  const el = document.getElementById('feedback');
+  el.className='feedback'; void el.offsetWidth; el.classList.add(ok?'correct':'wrong');
+}
+function shakeInput() {
+  const el=document.getElementById(currentQ&&currentQ.chosenMode==='factors'?'setupAnswerInputF':'setupAnswerInput');
+  el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake');
+}
+function showScorePop() {
+  const pop=document.createElement('div'); pop.className='score-pop'; pop.textContent='+1';
+  pop.style.left=(40+Math.random()*20)+'%'; pop.style.top='55%';
+  (document.querySelector('.arena')||document.getElementById('setup')).appendChild(pop);
+  setTimeout(()=>pop.remove(),900);
+}
+function logWrong(a,b,correct,given) {
+  const log=document.getElementById('wrongLog');
+  const tag=document.createElement('div'); tag.className='wrong-tag';
+  tag.textContent=`✗  ${a}×${b} = ${correct}  (you said ${given})`;
+  log.appendChild(tag); setTimeout(()=>tag.remove(),3200);
+}
+function updateLiveStats() {
+  const sbv=document.getElementById('streakBadgeVal'); if(sbv) sbv.textContent=streak;
+  const sb=document.getElementById('streakBadge'); if(sb) sb.classList.toggle('visible',streak>=3);
+}
+
+// ── END SESSION → STATS ──────────────────────────────────────
+function endSession() {
+  clearInterval(totalTimerInterval);
+  clearInterval(qTimerInterval);
+  isPlaying = false;
+  const si = document.getElementById('setupAnswerInput'); if(si) si.value='';
+  const bq = document.getElementById('blinkQ'); if(bq) bq.style.visibility='';
+  const sif = document.getElementById('setupAnswerInputF'); if(sif) sif.value='';
+  const bqf = document.getElementById('blinkQF'); if(bqf) bqf.style.visibility='';
+  document.getElementById('topBar').classList.remove('hidden-bar');
+
+
+
+  // Populate text stats immediately
+  const total = sessionLog.length;
+  const elapsed = sessionStart ? Math.floor((Date.now()-sessionStart)/1000) : 0;
+  const m = Math.floor(elapsed/60), s = elapsed%60;
+  const avg = total>0 ? (sessionLog.reduce((sum,q)=>sum+q.seconds,0)/total) : 0;
+  document.getElementById('statsQuestions').textContent = total;
+  document.getElementById('statsTime').innerHTML = `${m}:${s.toString().padStart(2,'0')}<span style="font-size:0.45em;letter-spacing:1px;vertical-align:baseline;line-height:1;">s</span>`;
+  document.getElementById('statsAvg').innerHTML = avg>0 ? avg.toFixed(1)+`<span style="font-size:0.45em;letter-spacing:1px;vertical-align:baseline;line-height:1;">s</span>` : '—';
+
+  sessionStart = null;
+  document.querySelectorAll('.input-wrap').forEach(w => w.style.setProperty('--progress', '0%'));
+  show('stats');
+  requestAnimationFrame(() => { document.getElementById('stats').classList.add('visible'); requestAnimationFrame(() => drawChart()); });
+  setTimeout(() => document.addEventListener('keydown', statsEnterListener), 200);
+}
+
+function statsEnterListener(e) {
+  if (e.key === 'Tab') { e.preventDefault(); newGame(); }
+}
+
+function newGame() {
+  document.removeEventListener('keydown', statsEnterListener);
+  const statsEl = document.getElementById('stats');
+  statsEl.classList.remove('visible');
+  setTimeout(() => { hide('stats'); }, 300);
+}
+
+// ── STATS SCREEN ─────────────────────────────────────────────
+function buildStatsScreen() {} // now inlined into endSession
+
+function drawChart() {
+  const canvas = document.getElementById('statsChart');
+  const wrap   = canvas.parentElement;
+  canvas.width  = wrap.clientWidth  * window.devicePixelRatio;
+  canvas.height = wrap.clientHeight * window.devicePixelRatio;
+  canvas.style.width  = wrap.clientWidth  + 'px';
+  canvas.style.height = wrap.clientHeight + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+  const W = wrap.clientWidth, H = wrap.clientHeight;
+
+  const data = sessionLog.map(q => q.seconds);
+  if (data.length === 0) return;
+
+  // Polynomial regression (degree 4) — fits a smooth curve through all data at once
+  function polyFit(ys, degree) {
+    const n = ys.length;
+    const xs = ys.map((_, i) => i / (n - 1)); // normalise x to 0..1
+    const d = degree + 1;
+    // Build Vandermonde matrix A and solve normal equations A^T A c = A^T y
+    const A = xs.map(x => Array.from({length: d}, (_, k) => Math.pow(x, k)));
+    // AtA and Aty
+    const AtA = Array.from({length:d}, (_,i) => Array.from({length:d}, (_,j) => A.reduce((s,r)=>s+r[i]*r[j],0)));
+    const Aty = Array.from({length:d}, (_,i) => A.reduce((s,r,ri)=>s+r[i]*ys[ri],0));
+    // Gaussian elimination
+    const M = AtA.map((r,i) => [...r, Aty[i]]);
+    for (let col=0; col<d; col++) {
+      let pivot = col; for (let r=col+1;r<d;r++) if (Math.abs(M[r][col])>Math.abs(M[pivot][col])) pivot=r;
+      [M[col],M[pivot]]=[M[pivot],M[col]];
+      for (let r=0;r<d;r++) if (r!==col && M[col][col]!==0) {
+        const f=M[r][col]/M[col][col];
+        for (let c=col;c<=d;c++) M[r][c]-=f*M[col][c];
+      }
+    }
+    const coeffs = M.map((r,i)=>r[d]/r[i]);
+    return xs.map(x => coeffs.reduce((s,c,k)=>s+c*Math.pow(x,k), 0));
+  }
+
+  const degree = Math.min(2, Math.floor(data.length / 8));
+  const smoothLine = degree >= 1 ? polyFit(data, degree) : data;
+
+  const pad = { top: 20, right: 20, bottom: 36, left: 44 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top  - pad.bottom;
+
+  // Cap Y at 95th percentile so outliers don't squash everything
+  const sorted95 = [...data].sort((a,b)=>a-b);
+  const p95 = sorted95[Math.floor(sorted95.length * 0.95)];
+  const maxVal = Math.max(p95 * 1.25, 1);
+
+  const xPos = i => pad.left + (i / Math.max(data.length-1, 1)) * plotW;
+  const yPos = v => pad.top + plotH - (Math.min(v, maxVal) / maxVal) * plotH;
+
+  // Grid lines + Y labels
+  ctx.lineWidth = 1;
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const y = pad.top + (plotH / ticks) * i;
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
+    const val = (maxVal - (maxVal / ticks) * i).toFixed(1);
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.font = `10px 'DM Mono', monospace`;
+    ctx.textAlign = 'right';
+    ctx.fillText(val + 's', pad.left - 8, y + 4);
+  }
+
+  // X axis labels — question numbers
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  ctx.font = `9px 'DM Mono', monospace`;
+  const step = Math.ceil(data.length / 10);
+  for (let i = 0; i < data.length; i += step) ctx.fillText(i+1, xPos(i), H - pad.bottom + 16);
+  ctx.fillText(data.length, xPos(data.length-1), H - pad.bottom + 16);
+
+  // Cardinal spline
+  function smoothPath(pts) {
+    if (pts.length < 2) return;
+    const tension = 0.3;
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(i-1, 0)];
+      const p1 = pts[i];
+      const p2 = pts[i+1];
+      const p3 = pts[Math.min(i+2, pts.length-1)];
+      ctx.bezierCurveTo(
+        p1[0] + (p2[0] - p0[0]) * tension, p1[1] + (p2[1] - p0[1]) * tension,
+        p2[0] - (p3[0] - p1[0]) * tension, p2[1] - (p3[1] - p1[1]) * tension,
+        p2[0], p2[1]
+      );
+    }
+  }
+
+  const smoothPts = smoothLine.map((v, i) => [xPos(i), yPos(v)]);
+
+  // Raw dots — one per question
+  data.forEach((v, i) => {
+    ctx.beginPath();
+    ctx.arc(xPos(i), yPos(v), 2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(200,240,58,0.35)';
+    ctx.fill();
+  });
+
+  // Main smooth trend line
+  ctx.beginPath();
+  smoothPath(smoothPts);
+  ctx.strokeStyle = 'rgba(200,240,58,0.9)';
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = 'round';
+  ctx.stroke();
+
+  // Red dots for slow outliers (> 1.5× median of raw data)
+  const sorted = [...data].sort((a,b) => a-b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  data.forEach((v, i) => {
+    if (!(v > median * 1.5 && data.length > 2)) return;
+    ctx.beginPath();
+    ctx.arc(xPos(i), yPos(v), 2.5, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(255,77,109,0.5)';
+    ctx.fill();
+    const q = sessionLog[i];
+    ctx.font = `9px 'DM Mono', monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,77,109,0.65)';
+    const label = q.chosenMode === 'factors' ? `${q.a}×?=${q.b}` : `${q.a}×${q.b}`;
+    ctx.fillText(label, xPos(i), yPos(v) - 10);
+  });
+}
+
+document.addEventListener('wheel', e => { if(document.activeElement.type==='number') e.preventDefault(); }, {passive:false});
+
+let helpPage = 0;
+function helpNav(dir) {
+  const slides = document.querySelectorAll('.help-slide');
+  const dots = document.querySelectorAll('.help-dot');
+  slides[helpPage].style.display = 'none';
+  dots[helpPage].classList.remove('active');
+  helpPage = (helpPage + dir + slides.length) % slides.length;
+  slides[helpPage].style.display = '';
+  dots[helpPage].classList.add('active');
+}
+function toggleHelp() {
+  const h = document.getElementById('helpOverlay');
+  if (h.style.display === 'none') {
+    // Reset to first slide
+    helpPage = 0;
+    document.querySelectorAll('.help-slide').forEach((s,i) => s.style.display = i===0 ? '' : 'none');
+    document.querySelectorAll('.help-dot').forEach((d,i) => d.classList.toggle('active', i===0));
+    h.style.display = 'block';
+  } else {
+    h.style.display = 'none';
+  }
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+buildNumRow();
+updateAxisHighlight();
+validateStart();
+// ── SETUP PREVIEW FLICKER ────────────────────────────────────
+updateFlicker();
+function startPreviewFlicker() { updateFlicker(); }
+
+function updateFlicker(changedN) {
+  const aVals = validValues('a');
+  const bVals = validValues('b');
+  const elA = document.getElementById('previewA');
+  const elB = document.getElementById('previewB');
+  if (!elA) return;
+  if (!aVals.length || !bVals.length) { elA.textContent='A'; elB.textContent='B'; return; }
+  // Update the changed axis; update the other only if it shows a placeholder
+  const a = (changedN !== undefined && (activeAxis === 'a' || linked) && aVals.includes(changedN))
+    ? changedN : aVals[aVals.length - 1];
+  const b = (changedN !== undefined && (activeAxis === 'b' || linked) && bVals.includes(changedN))
+    ? changedN : bVals[bVals.length - 1];
+  elA.textContent = a;
+  elB.textContent = b;
+  // Also update factor mode display
+  updateQuestionDisplay(a, b, 'b');
+}
+
+// ── GLOBAL KEY HANDLER ───────────────────────────────────────
+function activeScreen() {
+  if (!document.getElementById('setup').classList.contains('hidden')) return 'setup';
+  if (!document.getElementById('game').classList.contains('hidden'))  return 'game';
+  return 'stats';
+}
+
+document.addEventListener('keydown', function globalKeyHandler(e) {
+  if (isPlaying && e.code==='Space') { e.preventDefault(); togglePause(); }
+});
+
+// ── PAUSE ─────────────────────────────────────────────────────
+function togglePause() {
+  if (paused) resumeGame();
+  else pauseGame();
+}
+
+function pauseGame() {
+  if (paused) return;
+  paused = true;
+  pauseStart = Date.now();
+  // Snapshot elapsed times
+  qElapsedBeforePause = Date.now() - questionStart;
+  sessionElapsedBeforePause = Date.now() - sessionStart;
+  // Freeze intervals
+  clearInterval(totalTimerInterval);
+  clearInterval(qTimerInterval);
+  // Blur input so spacebar doesn't type into it on resume
+  document.getElementById('answerInput').blur();
+  // Show pause overlay
+  document.getElementById('pauseOverlay').classList.remove('hidden');
+}
+
+function resumeGame() {
+  if (!paused) return;
+  paused = false;
+  const pausedDuration = Date.now() - pauseStart;
+  // Shift start times forward by the paused duration
+  questionStart += pausedDuration;
+  sessionStart  += pausedDuration;
+  // Hide overlay
+  document.getElementById('pauseOverlay').classList.add('hidden');
+  // Restart intervals
+  totalTimerInterval = setInterval(() => {}, 500);
+  qTimerInterval = setInterval(() => { updateProgressBar(); }, 100);
+  const activeInp = document.getElementById(currentQ&&currentQ.chosenMode==='factors' ? 'setupAnswerInputF' : 'setupAnswerInput');
+  if (activeInp) activeInp.focus();
+}
+
+</script>
+</body>
+</html>
