@@ -366,12 +366,19 @@ canvas#statsChart {
   font-family: 'DM Mono', monospace;
   font-size: 11px;
   color: var(--text);
-  white-space: pre-line;
   pointer-events: none;
   z-index: 500;
   line-height: 1.5;
   letter-spacing: 0.5px;
 }
+#heatmapTip .tip-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+#heatmapTip .tip-row + .tip-row { margin-top: 2px; }
+#heatmapTip .tip-stats { opacity: 0.65; }
 .heatmap-label {
   font-family: 'DM Mono', monospace;
   font-size: 9px;
@@ -563,7 +570,7 @@ canvas#statsChart {
 <!-- ── STATS OVERLAY ─────────────────────────────────────────── -->
 <div id="statsOverlay" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(8,8,15,0.85);">
   <div onclick="toggleStats()" style="position:absolute;inset:0;"></div>
-  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px 36px 28px;width:min(640px,92vw);max-height:90vh;display:flex;flex-direction:column;">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px 36px 28px;width:min(820px,92vw);max-height:90vh;display:flex;flex-direction:column;">
     <button onclick="toggleStats()" style="position:absolute;top:16px;right:20px;background:none;border:none;font-size:20px;cursor:pointer;opacity:0.4;color:var(--text);">✕</button>
 
     <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;align-items:center;">
@@ -572,24 +579,16 @@ canvas#statsChart {
       <div style="display:flex;align-items:center;gap:10px;font-size:9px;letter-spacing:2px;opacity:0.5;font-family:'DM Mono',monospace;">
         <span>LAST</span>
         <div id="windowPills" style="display:flex;gap:0;">
-          <button class="stats-tab active" data-window="25"  onclick="setHeatmapWindow(25)">25</button>
-          <button class="stats-tab" data-window="100" onclick="setHeatmapWindow(100)">100</button>
-          <button class="stats-tab" data-window="0"   onclick="setHeatmapWindow(0)">ALL</button>
+          <button class="stats-tab active" data-window="10" onclick="setHeatmapWindow(10)">10</button>
+          <button class="stats-tab" data-window="50" onclick="setHeatmapWindow(50)">50</button>
+          <button class="stats-tab" data-window="0"  onclick="setHeatmapWindow(0)">ALL</button>
         </div>
       </div>
     </div>
 
     <div style="flex:1;overflow:auto;">
       <div id="heatmapGrid" class="heatmap-wrap"></div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;font-size:9px;letter-spacing:2px;opacity:0.5;font-family:'DM Mono',monospace;gap:16px;">
-        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
-          <svg width="16" height="16" viewBox="0 0 16 16" style="flex-shrink:0;">
-            <polygon points="0,0 16,0 0,16" fill="rgba(200,240,58,0.7)"/>
-            <polygon points="16,0 16,16 0,16" fill="rgba(200,240,58,0.3)"/>
-            <line x1="16" y1="0" x2="0" y2="16" stroke="var(--bg)" stroke-width="1"/>
-          </svg>
-          <span>NORMAL · FACTOR</span>
-        </div>
+      <div style="display:flex;align-items:center;margin-top:14px;font-size:9px;letter-spacing:2px;opacity:0.5;font-family:'DM Mono',monospace;gap:12px;">
         <span id="heatmapScaleLo">—</span>
         <div style="flex:1;height:6px;background:linear-gradient(to right,#c8f03a,#f1c40f,#ff8c00,#ff4d6d);border-radius:3px;"></div>
         <span id="heatmapScaleHi">—</span>
@@ -660,14 +659,12 @@ canvas#statsChart {
     <div class="stats-hint">or press tab / enter</div>
   </div>
   <div class="stats-right">
-    <div class="graph-title">Seconds per question</div>
+    <div class="graph-title">Pace over time</div>
     <div class="graph-wrap">
       <canvas id="statsChart"></canvas>
     </div>
     <div class="graph-avg-label">
-      <span><span class="legend-dot" style="background:rgba(200,240,58,0.9)"></span>trend</span>
-      <span><span class="legend-dot" style="background:rgba(200,240,58,0.35)"></span>per question</span>
-      <span><span class="legend-dot" style="background:#ff4d6d;opacity:0.6"></span>slow</span>
+      <span><span class="legend-dot" style="background:rgba(200,240,58,0.95)"></span>questions/min</span>
     </div>
   </div>
 </div>
@@ -694,7 +691,7 @@ let currentAttempts = 0;
 // localStorage is the fallback because window.storage isn't defined off-platform.
 const STORAGE_KEY  = 'sr-cards-v1';
 const ATTEMPTS_KEY = 'sr-attempts-v1';
-const ATTEMPTS_CAP = 100;          // max recent attempts kept per pair (matches largest window)
+const ATTEMPTS_CAP = 50;           // max recent attempts kept per pair (matches largest window)
 
 const storageBackend = (() => {
   if (typeof window !== 'undefined' && window.storage && typeof window.storage.get === 'function') {
@@ -775,10 +772,31 @@ async function loadAll() {
     if (v) attemptsByPair = JSON.parse(v);
   } catch (e) { attemptsByPair = {}; }
 
+  // Migrate from the old `normal:`/`factors:` schema to the new `n:`/`fr:`/`fc:`.
+  // Normal-mode data maps cleanly: `normal:r,c` → `n:r,c` (same canonical pair).
+  // Factor-mode data is dropped: the old keys merged "row known" and "col known"
+  // attempts into one bucket, so we can't split them after the fact. Better to
+  // start fresh with accurate per-variant tracking than carry forward muddled data.
+  let migrated = false;
+  function migrateMap(obj) {
+    for (const k of Object.keys(obj)) {
+      if (k.startsWith('normal:')) {
+        const newK = 'n:' + k.slice(7);
+        if (!obj[newK]) obj[newK] = obj[k];
+        delete obj[k];
+        migrated = true;
+      } else if (k.startsWith('factors:')) {
+        delete obj[k];
+        migrated = true;
+      }
+    }
+  }
+  migrateMap(srCards);
+  migrateMap(attemptsByPair);
+
   // One-time migration: for cards that don't have lifetime fields yet, seed
   // them from the existing buffer. Avoids the ALL tab showing empty data after
   // upgrade. Also trims any oversized buffers down to the new (smaller) cap.
-  let migrated = false;
   for (const k in attemptsByPair) {
     if (attemptsByPair[k].length > ATTEMPTS_CAP) {
       attemptsByPair[k] = attemptsByPair[k].slice(-ATTEMPTS_CAP);
@@ -811,7 +829,21 @@ window.addEventListener('beforeunload', () => {
 // ── SPACED REPETITION ────────────────────────────────────────
 const SR_BASE_EASE = 2.5, SR_MIN_EASE = 1.3;
 
-function srKey(a, b, mode) { const base = a <= b ? `${a},${b}` : `${b},${a}`; return mode ? `${mode}:${base}` : base; }
+// Storage key encodes which variant of the pair this is:
+//   n:r,c   — normal mode (r ≤ c), symmetric so order doesn't matter
+//   fr:r,c  — factor mode, row-r is the KNOWN factor: "r × ? = rc"  (top triangle)
+//   fc:r,c  — factor mode, col-c is the KNOWN factor: "c × ? = rc" (right triangle)
+// In factor mode, `a` is by convention the known factor (currentQ.hideSide is 'b').
+// For pairs where a == b, only fr is used; fc collapses to it.
+function srKey(a, b, mode) {
+  const lo = Math.min(a, b), hi = Math.max(a, b);
+  if (mode === 'factors') {
+    if (a === b)  return `fr:${lo},${hi}`;   // square: one variant only
+    if (a === lo) return `fr:${lo},${hi}`;   // known factor is the smaller value
+    return            `fc:${lo},${hi}`;       // known factor is the larger value
+  }
+  return `n:${lo},${hi}`;
+}
 function getCard(a, b, mode) {
   const k = srKey(a, b, mode);
   if (!srCards[k]) srCards[k] = {
@@ -942,41 +974,60 @@ function pickQuestion() {
   const aVals = validValues('a'), bVals = validValues('b');
   const now = Date.now();
   const candidates = [];
+
+  // Build the list of (variant) candidates per active pair.
+  // Each candidate has: {a, b, mode} ready to drive updateQuestionDisplay.
+  function pushCandidate(a, b, mode) {
+    const card = getCard(a, b, mode);
+    let weight = 1.0;
+    if (card.due > 0 && now >= card.due) weight += Math.min(8, (now - card.due) / 10000);
+    if (card.wrongStreak > 0) weight += card.wrongStreak * 4;
+    if (card.interval === 0 && card.due === 0) weight += 1.5;
+    if (card.due > 0 && now < card.due && card.wrongStreak === 0) {
+      const streak = card.correctStreak || 0;
+      const suppression = Math.max(0.005, 0.1 / Math.pow(1.8, streak));
+      weight *= suppression;
+    }
+    if (card.lastTimeRatio != null) {
+      weight += Math.max(0, card.lastTimeRatio - 1) * 3;
+    }
+    if (card.lastAttempts > 1) weight += (card.lastAttempts - 1) * 2;
+    candidates.push({ a, b, mode, weight });
+  }
+
   for (const a of aVals) {
     for (const b of bVals) {
-      const card = getCard(a, b, currentQ && currentQ.chosenMode);
-      let weight = 1.0;
-      if (card.due > 0 && now >= card.due) weight += Math.min(8, (now - card.due) / 10000);
-      if (card.wrongStreak > 0) weight += card.wrongStreak * 4;
-      if (card.interval === 0 && card.due === 0) weight += 1.5;
-      if (card.due > 0 && now < card.due && card.wrongStreak === 0) {
-        const streak = card.correctStreak || 0;
-        const suppression = Math.max(0.005, 0.1 / Math.pow(1.8, streak));
-        weight *= suppression;
+      if (gameModes.has('normal')) {
+        // Normal is symmetric — only generate one orientation per unordered pair
+        if (a <= b) pushCandidate(a, b, 'normal');
       }
-      if (card.lastTimeRatio != null) {
-        weight += Math.max(0, card.lastTimeRatio - 1) * 3;
+      if (gameModes.has('factors')) {
+        // Factor mode: known factor is `a`. Generate both orientations as distinct cards.
+        // (a,b) and (b,a) map to different srKeys (fr vs fc) when a != b.
+        pushCandidate(a, b, 'factors');
       }
-      if (card.lastAttempts > 1) weight += (card.lastAttempts - 1) * 2;
-      candidates.push({ a, b, weight });
     }
   }
-  // Avoid immediate repeats. In normal mode (a×b=?), also filter the mirror
-  // pair, since (8,7) right after (7,8) feels like the same question.
-  // In factor mode the visible prompt differs (different known factor), so
-  // showing the mirror next is fine.
-  const filterMirror = currentQ && currentQ.chosenMode !== 'factors';
+
+  // Avoid immediate repeats. The (a,b,mode) tuple identifies the exact prompt.
+  // For normal mode, also filter the mirror — but our enumeration already only
+  // generates one orientation, so this only matters for factor mode where the
+  // mirror is a different variant. In factor mode the mirror IS a different
+  // prompt (different known factor), so don't filter it.
   const pool = candidates.filter(c => {
     if (!currentQ) return true;
-    if (c.a === currentQ.a && c.b === currentQ.b) return false;
-    if (filterMirror && c.a === currentQ.b && c.b === currentQ.a) return false;
+    if (c.a === currentQ.a && c.b === currentQ.b && c.mode === currentQ.chosenMode) return false;
     return true;
   });
   const source = pool.length > 0 ? pool : candidates;
   const total = source.reduce((s, c) => s + c.weight, 0);
   let r = Math.random() * total;
-  for (const c of source) { r -= c.weight; if (r <= 0) return { a: c.a, b: c.b }; }
-  return source[source.length - 1];
+  for (const c of source) {
+    r -= c.weight;
+    if (r <= 0) return { a: c.a, b: c.b, forceMode: c.mode };
+  }
+  const last = source[source.length - 1];
+  return { a: last.a, b: last.b, forceMode: last.mode };
 }
 
 // ── SETUP STATE ──────────────────────────────────────────────
@@ -1060,7 +1111,27 @@ function buildNumRow() {
   let mouseDownY = null;
   let mouseDownN = null;
   let preState = null;
-  let dragPath = [];
+
+  // Map a cell number (1..20) to its grid position in the 10×2 layout.
+  function gridPos(n) {
+    return { row: n > 10 ? 1 : 0, col: (n - 1) % 10 };
+  }
+
+  // Cell-anchored marquee: returns all cells in the bounding rectangle of
+  // mouseDownN and currentN in grid space. The marquee snaps to whole cells —
+  // moving within a cell doesn't change the selection.
+  function cellsInGridRect(n1, n2) {
+    const p1 = gridPos(n1), p2 = gridPos(n2);
+    const minR = Math.min(p1.row, p2.row), maxR = Math.max(p1.row, p2.row);
+    const minC = Math.min(p1.col, p2.col), maxC = Math.max(p1.col, p2.col);
+    const out = new Set();
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        out.add(r * 10 + c + 1);
+      }
+    }
+    return out;
+  }
 
   wrap.addEventListener('mousedown', (e) => {
     e.preventDefault();
@@ -1075,7 +1146,6 @@ function buildNumRow() {
     dragAxis = activeAxis;
     lastDraggedN = n;
     preState = null;
-    dragPath = [];
   });
 
   document.addEventListener('mousemove', (e) => {
@@ -1086,51 +1156,32 @@ function buildNumRow() {
       if (Math.abs(e.clientX - mouseDownX) > 4 || Math.abs(e.clientY - (mouseDownY||0)) > 4) {
         hasDragged = true;
         preState = { a: new Set(ranges['a']), b: new Set(ranges['b']) };
-        dragPath = [mouseDownN];
-        replayPath();
+        applyMarquee(mouseDownN);
       } else {
         return;
       }
     }
 
     if (n === null || n === lastDraggedN) return;
-
-    const existingIdx = dragPath.indexOf(n);
-    if (existingIdx !== -1) {
-      dragPath = dragPath.slice(0, existingIdx + 1);
-    } else {
-      const startN = dragPath[0];
-      const tip = dragPath[dragPath.length - 1];
-      const movingBack = (tip > startN && n < tip) || (tip < startN && n > tip);
-      if (movingBack) {
-        const mn = Math.min(tip, n), mx = Math.max(tip, n);
-        for (let i = mn; i <= mx; i++) {
-          if (i === tip) continue;
-          if (!dragPath.includes(i)) dragPath.push(i);
-        }
-      } else {
-        const mn = Math.min(tip, n), mx = Math.max(tip, n);
-        for (let i = mn; i <= mx; i++) {
-          if (!dragPath.includes(i)) dragPath.push(i);
-        }
-      }
-    }
-
     lastDraggedN = n;
-    replayPath();
+    applyMarquee(n);
   });
 
-  function replayPath() {
+  // Apply marquee: cells in the grid rectangle from mouseDownN to currentN are
+  // TOGGLED relative to pre-drag state; cells outside revert to pre-drag.
+  function applyMarquee(currentN) {
     const ax = dragAxis;
-    ranges['a'] = new Set(preState['a']);
-    ranges['b'] = new Set(preState['b']);
+    const inRect = cellsInGridRect(mouseDownN, currentN);
     if (isLinked()) {
-      for (const n of dragPath) {
+      ranges['a'] = new Set(preState['a']);
+      ranges['b'] = new Set(preState['b']);
+      for (const n of inRect) {
         if (preState[ax].has(n)) { ranges['a'].delete(n); ranges['b'].delete(n); }
         else                     { ranges['a'].add(n);    ranges['b'].add(n); }
       }
     } else {
-      for (const n of dragPath) {
+      ranges[ax] = new Set(preState[ax]);
+      for (const n of inRect) {
         if (preState[ax].has(n)) ranges[ax].delete(n);
         else                     ranges[ax].add(n);
       }
@@ -1143,6 +1194,7 @@ function buildNumRow() {
     isDragging = false;
 
     if (!hasDragged) {
+      // Single click on a cell — toggle it
       flipCell(mouseDownN);
       renderNumRow();
     }
@@ -1151,7 +1203,6 @@ function buildNumRow() {
     mouseDownX = null;
     mouseDownN = null;
     preState = null;
-    dragPath = [];
     dragAxis = null;
     lastDraggedN = null;
     validateStart();
@@ -1231,7 +1282,7 @@ function nextQuestion() {
   questionCount++;
   currentAttempts = 0;
   currentQ.hideSide = 'b';
-  currentQ.chosenMode = updateQuestionDisplay(currentQ.a, currentQ.b, currentQ.hideSide);
+  currentQ.chosenMode = updateQuestionDisplay(currentQ.a, currentQ.b, currentQ.hideSide, currentQ.forceMode);
   clearInterval(qTimerInterval);
   questionStart = Date.now();
   qTimerInterval = setInterval(() => { updateProgressBar(); }, 100);
@@ -1339,9 +1390,10 @@ function setupAnswerTypedF() {
 
 function handleInputF() {
   const input = document.getElementById('setupAnswerInputF');
-  const val = parseInt(input.value);
-  if (isNaN(val) || !currentQ) return;
+  if (!currentQ) return;
   const correct = currentQ.hideSide === 'b' ? currentQ.b : currentQ.a;
+  const val = parseInt(input.value);
+  if (isNaN(val)) return;
   if (val === correct && input.value.replace('-','').length === correct.toString().length) checkAnswer();
 }
 
@@ -1355,9 +1407,9 @@ function setupAnswerKey(e) {
 function handleInput() {
   if (currentQ && currentQ.chosenMode === 'factors') { handleInputF(); return; }
   const input = document.getElementById('setupAnswerInput');
+  const correct = currentQ.a * currentQ.b;
   const val = parseInt(input.value);
   if (isNaN(val)) return;
-  const correct = currentQ.a * currentQ.b;
   if (val === correct && input.value.replace('-','').length === correct.toString().length) checkAnswer();
 }
 
@@ -1449,67 +1501,89 @@ function drawChart() {
   ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
   const W = wrap.clientWidth, H = wrap.clientHeight;
 
-  const data = sessionLog.map(q => q.seconds);
-  if (data.length === 0) return;
+  if (sessionLog.length === 0) return;
 
-  // Polynomial regression — fits a smooth curve through all data at once
-  function polyFit(ys, degree) {
-    const n = ys.length;
-    if (n < 2) return ys.slice();
-    const xs = ys.map((_, i) => i / (n - 1));
-    const d = degree + 1;
-    const A = xs.map(x => Array.from({length: d}, (_, k) => Math.pow(x, k)));
-    const AtA = Array.from({length:d}, (_,i) => Array.from({length:d}, (_,j) => A.reduce((s,r)=>s+r[i]*r[j],0)));
-    const Aty = Array.from({length:d}, (_,i) => A.reduce((s,r,ri)=>s+r[i]*ys[ri],0));
-    const M = AtA.map((r,i) => [...r, Aty[i]]);
-    for (let col = 0; col < d; col++) {
-      let pivot = col;
-      for (let r = col + 1; r < d; r++) if (Math.abs(M[r][col]) > Math.abs(M[pivot][col])) pivot = r;
-      [M[col], M[pivot]] = [M[pivot], M[col]];
-      if (Math.abs(M[col][col]) < 1e-12) return ys.slice(); // Singular — fall back to raw
-      for (let r = 0; r < d; r++) if (r !== col) {
-        const f = M[r][col] / M[col][col];
-        for (let c = col; c <= d; c++) M[r][c] -= f * M[col][c];
-      }
-    }
-    const coeffs = M.map((r, i) => r[d] / r[i]);
-    return xs.map(x => coeffs.reduce((s, c, k) => s + c * Math.pow(x, k), 0));
+  // For each question: per-question seconds and the elapsed time at submit
+  // (cumulative sum). Time axis is "seconds since session start" — same as
+  // monkeytype, lets pacing/pauses be read directly from the plot.
+  const secs = sessionLog.map(q => q.seconds);
+  const elapsedAt = [];
+  {
+    let acc = 0;
+    for (const s of secs) { acc += s; elapsedAt.push(acc); }
   }
+  const totalElapsed = elapsedAt[elapsedAt.length - 1];
 
-  const degree = Math.min(2, Math.floor(data.length / 8));
-  const smoothLine = degree >= 1 ? polyFit(data, degree) : data;
+  // Running questions per minute, sampled at each question completion.
+  // At question i (1-indexed), qpm = i / (elapsedAt[i-1] / 60). X uses the
+  // actual fractional submit time so two completions in the same second don't
+  // stack on a single x slot.
+  const qpmSamples = elapsedAt.map((t, i) => [t, (i + 1) / (t / 60)]);
+  const qpm = qpmSamples.map(s => s[1]);  // for axis scaling
 
-  const pad = { top: 20, right: 20, bottom: 36, left: 44 };
+  const pad = { top: 16, right: 20, bottom: 32, left: 60 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top  - pad.bottom;
 
-  const sorted95 = [...data].sort((a,b) => a-b);
-  const p95 = sorted95[Math.floor(sorted95.length * 0.95)];
-  const maxVal = Math.max(p95 * 1.25, 1);
+  // Y-left scale: qpm. Pad ±20% (min 15) around observed range so dots don't
+  // look like jagged peaks — gives the curve room to read as a gentle shape.
+  let qpmMin, qpmMax;
+  if (qpm.length > 0) {
+    const observedMin = Math.min(...qpm);
+    const observedMax = Math.max(...qpm);
+    const span = Math.max(observedMax - observedMin, 1);
+    const padQ = Math.max(span * 0.5, 15);
+    qpmMin = Math.max(0, Math.floor(observedMin - padQ));
+    qpmMax = Math.ceil(observedMax + padQ);
+  } else {
+    qpmMin = 0; qpmMax = 30;
+  }
+  const qpmRange = Math.max(qpmMax - qpmMin, 1);
 
-  const xPos = i => pad.left + (i / Math.max(data.length - 1, 1)) * plotW;
-  const yPos = v => pad.top + plotH - (Math.min(v, maxVal) / maxVal) * plotH;
+  const xPos  = t => pad.left + (totalElapsed > 0 ? (t / totalElapsed) : 0) * plotW;
+  const yQpm  = q => pad.top + plotH - ((q - qpmMin) / qpmRange) * plotH;
 
+  // Gridlines + Y-axis labels
   ctx.lineWidth = 1;
   const ticks = 4;
+  ctx.font = `10px 'DM Mono', monospace`;
   for (let i = 0; i <= ticks; i++) {
     const y = pad.top + (plotH / ticks) * i;
     ctx.strokeStyle = 'rgba(255,255,255,0.04)';
     ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
-    const val = (maxVal - (maxVal / ticks) * i).toFixed(1);
-    ctx.fillStyle = 'rgba(255,255,255,0.2)';
-    ctx.font = `10px 'DM Mono', monospace`;
+
+    const qpmVal = qpmMax - (qpmRange / ticks) * i;
+    ctx.fillStyle = 'rgba(200,240,58,0.55)';
     ctx.textAlign = 'right';
-    ctx.fillText(val + 's', pad.left - 8, y + 4);
+    ctx.fillText(Math.round(qpmVal), pad.left - 6, y + 3);
   }
 
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.18)';
+  // Y-axis label (rotated)
+  ctx.save();
   ctx.font = `9px 'DM Mono', monospace`;
-  const step = Math.ceil(data.length / 10);
-  for (let i = 0; i < data.length; i += step) ctx.fillText(i+1, xPos(i), H - pad.bottom + 16);
-  ctx.fillText(data.length, xPos(data.length - 1), H - pad.bottom + 16);
+  ctx.fillStyle = 'rgba(200,240,58,0.55)';
+  ctx.textAlign = 'center';
+  ctx.translate(pad.left - 32, pad.top + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('QUESTIONS / MIN', 0, 0);
+  ctx.restore();
 
+  // X-axis ticks at sensible intervals
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.font = `9px 'DM Mono', monospace`;
+  // Pick a tick interval: 5, 10, 15, 30, 60, 120... whichever gives ~5–8 ticks
+  const tickCandidates = [5, 10, 15, 30, 60, 120, 300, 600];
+  const tickInterval = tickCandidates.find(t => totalElapsed / t <= 8) || tickCandidates[tickCandidates.length - 1];
+  for (let t = 0; t <= totalElapsed; t += tickInterval) {
+    ctx.fillText(t + 's', xPos(t), H - pad.bottom + 14);
+  }
+  // Also label the actual end if not on a tick
+  if (totalElapsed % tickInterval > tickInterval * 0.3) {
+    ctx.fillText(Math.round(totalElapsed) + 's', xPos(totalElapsed), H - pad.bottom + 14);
+  }
+
+  // Smooth path through (x, y) points — cardinal spline
   function smoothPath(pts) {
     if (pts.length < 2) return;
     const tension = 0.3;
@@ -1527,37 +1601,27 @@ function drawChart() {
     }
   }
 
-  const smoothPts = smoothLine.map((v, i) => [xPos(i), yPos(v)]);
+  // Running questions per minute: smoothed line connecting per-completion
+  // points, with the actual data points marked as faint dots underneath.
+  const qpmPts = qpmSamples.map(([t, q]) => [xPos(t), yQpm(q)]);
 
-  data.forEach((v, i) => {
+  // Faint dots first (so the line sits on top)
+  ctx.fillStyle = 'rgba(200,240,58,0.4)';
+  for (const [x, y] of qpmPts) {
     ctx.beginPath();
-    ctx.arc(xPos(i), yPos(v), 2, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(200,240,58,0.35)';
+    ctx.arc(x, y, 2, 0, Math.PI * 2);
     ctx.fill();
-  });
+  }
 
-  ctx.beginPath();
-  smoothPath(smoothPts);
-  ctx.strokeStyle = 'rgba(200,240,58,0.9)';
-  ctx.lineWidth = 2.5;
-  ctx.lineJoin = 'round';
-  ctx.stroke();
-
-  const sorted = [...data].sort((a,b) => a-b);
-  const median = sorted[Math.floor(sorted.length / 2)];
-  data.forEach((v, i) => {
-    if (!(v > median * 1.5 && data.length > 2)) return;
+  // Smoothed line on top
+  if (qpmPts.length >= 2) {
     ctx.beginPath();
-    ctx.arc(xPos(i), yPos(v), 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,77,109,0.5)';
-    ctx.fill();
-    const q = sessionLog[i];
-    ctx.font = `9px 'DM Mono', monospace`;
-    ctx.textAlign = 'center';
-    ctx.fillStyle = 'rgba(255,77,109,0.65)';
-    const label = q.chosenMode === 'factors' ? `${q.a}×?=${q.b}` : `${q.a}×${q.b}`;
-    ctx.fillText(label, xPos(i), yPos(v) - 10);
-  });
+    smoothPath(qpmPts);
+    ctx.strokeStyle = 'rgba(200,240,58,0.95)';
+    ctx.lineWidth = 2.5;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
 }
 
 document.addEventListener('wheel', e => { if (document.activeElement.type === 'number') e.preventDefault(); }, { passive: false });
@@ -1586,7 +1650,7 @@ function toggleHelp() {
 }
 
 // ── STATS OVERLAY ────────────────────────────────────────────
-let heatmapWindow = 25;  // 0 = ALL, else N most recent attempts per pair
+let heatmapWindow = 10;  // 0 = ALL, else N most recent attempts per pair
 
 function toggleStats() {
   const el = document.getElementById('statsOverlay');
@@ -1637,9 +1701,9 @@ function pairStatsLifetime(srKey) {
   };
 }
 
-function statsForMode(mode, windowN) {
+// Returns Map of "r,c" → stats for keys with the given prefix (e.g. "n:", "fr:", "fc:")
+function statsForPrefix(prefix, windowN) {
   const out = new Map();
-  const prefix = mode + ':';
   if (windowN === 0) {
     // Lifetime — iterate cards, since totals live there
     for (const k in srCards) {
@@ -1682,10 +1746,12 @@ function colorFor(d, lo, hi) {
 function renderHeatmap() {
   const grid = document.getElementById('heatmapGrid');
   const empty = document.getElementById('heatmapEmpty');
-  const dataN = statsForMode('normal', heatmapWindow);
-  const dataF = statsForMode('factors', heatmapWindow);
+  const dataN  = statsForPrefix('n:',  heatmapWindow);   // normal
+  const dataFR = statsForPrefix('fr:', heatmapWindow);   // factor, row is known factor → top triangle
+  const dataFC = statsForPrefix('fc:', heatmapWindow);   // factor, col is known factor → right triangle
 
-  if (dataN.size === 0 && dataF.size === 0) {
+  const anyData = dataN.size + dataFR.size + dataFC.size > 0;
+  if (!anyData) {
     grid.innerHTML = '';
     empty.style.display = '';
     document.getElementById('heatmapScaleLo').textContent = '—';
@@ -1694,8 +1760,9 @@ function renderHeatmap() {
   }
   empty.style.display = 'none';
 
-  // Shared color scale across both modes — same color = same speed regardless of mode
-  const allAvgs = [...dataN.values(), ...dataF.values()].filter(d => d.avg != null).map(d => d.avg);
+  // Shared color scale across all three datasets — same color = same speed
+  const allAvgs = [...dataN.values(), ...dataFR.values(), ...dataFC.values()]
+    .filter(d => d.avg != null).map(d => d.avg);
   if (allAvgs.length === 0) {
     grid.innerHTML = '';
     empty.style.display = '';
@@ -1708,28 +1775,37 @@ function renderHeatmap() {
   document.getElementById('heatmapScaleLo').textContent = `≤${lo.toFixed(1)}s`;
   document.getElementById('heatmapScaleHi').textContent = `≥${hi.toFixed(1)}s`;
 
-  function tipText(r, c, dN, dF) {
-    const lines = [`${r}×${c}`];
-    // Show count only on the ALL window — for narrower windows the count
-    // would always equal the window size and add no information.
+  // Three SVG polygons in each cell (viewBox 0 0 10 10):
+  //   Normal       : (0,0)-(10,10)-(0,10)   — bottom-left HALF
+  //   Factor row=k : (0,0)-(10,0)-(5,5)     — top QUARTER (apex at center)
+  //   Factor col=k : (10,0)-(10,10)-(5,5)   — right QUARTER
+  const POLY_N  = '0,0 10,10 0,10';
+  const POLY_FR = '0,0 10,0 5,5';
+  const POLY_FC = '10,0 10,10 5,5';
+  const NO_DATA = 'rgba(255,255,255,0.04)';
+
+  function tipHTML(r, c, dN, dFR, dFC, colorN, colorFR, colorFC) {
     const showCount = heatmapWindow === 0;
     const fmt = (d) => {
       const t = d.avg != null ? d.avg.toFixed(2) + 's' : '—';
       return showCount ? `${t} · ${d.attempts} ${d.attempts === 1 ? 'time' : 'times'}` : t;
     };
-    if (dN) lines.push(`normal: ${fmt(dN)}`);
-    if (dF) lines.push(`factor: ${fmt(dF)}`);
-    if (!dN && !dF) lines.push('no data');
-    return lines.join('\n');
+    // Each line: a 14×14 SVG with the corresponding cell region filled in its
+    // cell-specific color, then the prompt + stats text.
+    const row = (poly, color, label, stats) =>
+      `<div class="tip-row"><svg viewBox="0 0 10 10" width="14" height="14" style="flex-shrink:0;"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.6"/><g transform="translate(0.8 0.8) scale(0.84)"><polygon points="${poly}" fill="${color}"/></g></svg><span>${label}&nbsp;&nbsp;<span class="tip-stats">${stats}</span></span></div>`;
+    const rows = [];
+    if (dN)  rows.push(row(POLY_N,  colorN,  `${r}×${c} = ?`,    fmt(dN)));
+    if (dFR) rows.push(row(POLY_FR, colorFR, `${r}×? = ${r*c}`,  fmt(dFR)));
+    if (dFC) rows.push(row(POLY_FC, colorFC, `?×${c} = ${r*c}`,  fmt(dFC)));
+    if (rows.length === 0) return '<div class="tip-row" style="opacity:0.6;">no data</div>';
+    return rows.join('');
   }
 
   let html = '';
   // Header row: 20 column labels, then a blank for the Y-label column
   for (let c = 1; c <= 20; c++) html += `<div class="heatmap-label">${c}</div>`;
   html += `<div class="heatmap-label"></div>`;
-  // Data rows: cells for c >= r only (upper-right triangle of the GRID).
-  // Within each rendered cell, an SVG draws TWO triangles:
-  //   upper-left = normal mode, lower-right = factor mode.
   for (let r = 1; r <= 20; r++) {
     for (let c = 1; c <= 20; c++) {
       if (c < r) {
@@ -1737,15 +1813,19 @@ function renderHeatmap() {
         continue;
       }
       const key = `${r},${c}`;
-      const dN = dataN.get(key);
-      const dF = dataF.get(key);
-      const colorN = colorFor(dN, lo, hi);
-      const colorF = colorFor(dF, lo, hi);
-      const tip = tipText(r, c, dN, dF).replace(/"/g, '&quot;');
+      const dN  = dataN.get(key);
+      const dFR = dataFR.get(key);
+      // For r == c, fc collapses to fr (one variant only), so don't read fc.
+      const dFC = (r === c) ? null : dataFC.get(key);
+      const colorN  = colorFor(dN,  lo, hi);
+      const colorFR = colorFor(dFR, lo, hi);
+      const colorFC = (r === c) ? NO_DATA : colorFor(dFC, lo, hi);
+      const tip = tipHTML(r, c, dN, dFR, dFC, colorN, colorFR, colorFC).replace(/"/g, '&quot;');
       html += `<div class="heatmap-cell has-data" data-tip="${tip}">
         <svg viewBox="0 0 10 10" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">
-          <polygon points="0,0 10,0 0,10" fill="${colorN}"/>
-          <polygon points="10,0 10,10 0,10" fill="${colorF}"/>
+          <polygon points="${POLY_N}"  fill="${colorN}"/>
+          <polygon points="${POLY_FR}" fill="${colorFR}"/>
+          <polygon points="${POLY_FC}" fill="${colorFC}"/>
         </svg>
       </div>`;
     }
@@ -1767,8 +1847,8 @@ function attachHeatmapTooltip(grid) {
   grid.onmousemove = (e) => {
     const cell = e.target.closest('.heatmap-cell.has-data');
     if (!cell) { hmTooltipEl.style.display = 'none'; return; }
-    const text = cell.getAttribute('data-tip') || '';
-    hmTooltipEl.textContent = text;
+    const html = cell.getAttribute('data-tip') || '';
+    hmTooltipEl.innerHTML = html;
     hmTooltipEl.style.display = 'block';
     // Position above the cursor; flip below if too close to top edge
     const pad = 12;
