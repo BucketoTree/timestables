@@ -1840,11 +1840,21 @@ function drawChart() {
   const yMax = Math.max(maxSec * 1.15, 1);
   const yRange = yMax - yMin;
 
-  // Color scale — same 5th/95th percentile clipping as the heatmap so colors
-  // mean the same thing visually. Falls back to min/max if the session is short.
+  // Color scale — uses the *lifetime* scale (same as the heatmap's ALL view)
+  // so colors mean the same thing across sessions: a session where every
+  // question was slow shows mostly red, not "red relative to the session".
+  // If there's no history yet (very first session), fall back to session-local
+  // 5/95 percentiles so the colors still convey relative speed.
   const sortedSecs = [...secs].sort((a, b) => a - b);
-  const dotLo = sortedSecs[Math.floor(sortedSecs.length * 0.05)] ?? sortedSecs[0];
-  const dotHi = sortedSecs[Math.floor(sortedSecs.length * 0.95)] ?? sortedSecs[sortedSecs.length - 1];
+  const lifetime = lifetimeScale();
+  let dotLo, dotHi;
+  if (lifetime) {
+    dotLo = lifetime.lo;
+    dotHi = lifetime.hi;
+  } else {
+    dotLo = sortedSecs[Math.floor(sortedSecs.length * 0.05)] ?? sortedSecs[0];
+    dotHi = sortedSecs[Math.floor(sortedSecs.length * 0.95)] ?? sortedSecs[sortedSecs.length - 1];
+  }
 
   const xPos = t => pad.left + (totalElapsed > 0 ? (t / totalElapsed) : 0) * plotW;
   const yPos = s => pad.top + plotH - ((s - yMin) / yRange) * plotH;
@@ -1948,10 +1958,12 @@ function drawChart() {
   // Dots — each question colored by its solve time using the heatmap gradient.
   // Outliers (≥ dotHi, the red end of the gradient) get a small label so you
   // can see which questions tripped you up. Skip labelling if the whole session
-  // sits within a narrow band — the percentile threshold can be misleading on
-  // very fast/uniform sessions.
+  // sits within a narrow band — there's no meaningful outlier to flag.
+  // (This is a session-internal check; the dot threshold uses the global
+  // dotHi so colors and labels match the heatmap scale.)
   const sessionMedian = sortedSecs[Math.floor(sortedSecs.length / 2)];
-  const labelOutliers = sessionLog.length >= 4 && dotHi >= sessionMedian * 1.5;
+  const sessionP90 = sortedSecs[Math.floor(sortedSecs.length * 0.9)];
+  const labelOutliers = sessionLog.length >= 4 && sessionP90 >= sessionMedian * 1.5;
 
   // Pass 1: draw all dots first so labels render on top
   for (let i = 0; i < sessionLog.length; i++) {
@@ -2115,6 +2127,31 @@ function statsForPrefix(prefix, windowN) {
   return out;
 }
 
+// Compute the gradient's [lo, hi] from a flat array of avg times.
+// Uses 5th/95th percentile clipping so a few outliers don't squash the
+// gradient. Returns null if the array is empty.
+function computeScale(avgs) {
+  if (!avgs || avgs.length === 0) return null;
+  const sorted = [...avgs].sort((a, b) => a - b);
+  return {
+    lo: sorted[Math.floor(sorted.length * 0.05)] || sorted[0],
+    hi: sorted[Math.floor(sorted.length * 0.95)] || sorted[sorted.length - 1],
+  };
+}
+
+// Lifetime scale across all stored variants — the "global" gradient endpoints.
+// Used by both the heatmap (when window=ALL) and the post-session dot plot, so
+// colors are consistent across sessions: a slow session looks slow, not just
+// "slow relative to itself". Returns null if no data exists yet.
+function lifetimeScale() {
+  const avgs = [];
+  for (const k in srCards) {
+    const s = pairStatsLifetime(k);
+    if (s && s.avg != null) avgs.push(s.avg);
+  }
+  return computeScale(avgs);
+}
+
 // Lime → yellow → orange → red gradient, scaled by [lo, hi]
 function colorFor(d, lo, hi) {
   if (!d || d.avg == null) return 'rgba(255,255,255,0.04)';
@@ -2161,9 +2198,8 @@ function renderHeatmap() {
     empty.style.display = '';
     return;
   }
-  allAvgs.sort((a, b) => a - b);
-  const lo = allAvgs[Math.floor(allAvgs.length * 0.05)] || allAvgs[0];
-  const hi = allAvgs[Math.floor(allAvgs.length * 0.95)] || allAvgs[allAvgs.length - 1];
+  const scale = computeScale(allAvgs);
+  const lo = scale.lo, hi = scale.hi;
 
   // Cache for the custom-mode slider, which maps its 0–100 positions to this
   // [lo, hi] range. Without the cache the slider would have to recompute on
