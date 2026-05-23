@@ -234,19 +234,20 @@ body::after {
   flex: 1;
   position: relative;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-canvas#statsChart {
+.graph-dots-wrap {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+canvas#statsDots {
   width: 100% !important;
   height: 100% !important;
-}
-
-.graph-avg-label {
-  font-size: 10px;
-  letter-spacing: 2px;
-  opacity: 0.3;
-  display: flex;
-  gap: 20px;
 }
 
 .legend-dot {
@@ -337,7 +338,7 @@ canvas#statsChart {
 
 .heatmap-wrap {
   display: grid;
-  grid-template-columns: repeat(20, 1fr) 24px;
+  grid-template-columns: repeat(20, 1fr) 30px;
   grid-auto-rows: 1fr;
   gap: 2px;
   width: 100%;
@@ -381,12 +382,61 @@ canvas#statsChart {
 #heatmapTip .tip-stats { opacity: 0.65; }
 .heatmap-label {
   font-family: 'DM Mono', monospace;
-  font-size: 9px;
+  font-size: 11px;
   color: var(--muted);
-  opacity: 0.5;
+  opacity: 0.7;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.slider-thumb {
+  position: absolute;
+  width: 12px;
+  height: 22px;
+  border-radius: 4px;
+  background: var(--text);
+  border: 1px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--text);
+  top: 50%;
+  transform: translate(-50%, -50%);
+  cursor: ew-resize;
+  z-index: 3;
+  transition: background 0.1s;
+}
+.slider-thumb:hover { background: var(--accent); }
+.slider-thumb.dragging { background: var(--accent); }
+
+.heatmap-cell.dimmed { opacity: 0.18; }
+.heatmap-cell.dimmed:hover { opacity: 0.18; }
+
+body.custom-active .heatmap-cell.has-data { cursor: crosshair; }
+
+/* In custom mode the question-range area (number cells, axis buttons) is
+   frozen — the pool comes from the heatmap, not from those controls. Keep
+   them visible but visually inert and click-blocked. The qcount buttons stay
+   interactive though, since session length still applies. */
+#topBar.custom-frozen .num-row-wrap {
+  opacity: 0.3;
+  pointer-events: none;
+  filter: grayscale(0.6);
+}
+/* Selected cells (1–10) start at full opacity / accent color, while unselected
+   (11–20) start dimmer — so a single wrap-level opacity dim leaves them at
+   different visible brightness. Force every cell to the muted baseline while
+   frozen so the whole row reads as one uniform grey block. */
+#topBar.custom-frozen .num-cell {
+  color: var(--muted);
+  opacity: 0.65;
+}
+/* Axis buttons (the big A/B preview) stay visible since they show the current
+   pool question, but clicks are blocked while custom mode is active. */
+body.custom-active #axisA,
+body.custom-active #axisB,
+body.custom-active #factorKnown,
+body.custom-active #factorProduct {
+  pointer-events: none;
+  cursor: default;
 }
 </style>
 </head>
@@ -395,6 +445,7 @@ canvas#statsChart {
   <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;flex-shrink:0;">
     <button class="mode-btn active" id="modeNormal" onclick="setMode('normal')" oncontextmenu="soloMode('normal');return false;">Normal</button>
     <button class="mode-btn" id="modeFactors" onclick="setMode('factors')" oncontextmenu="soloMode('factors');return false;">Factor</button>
+    <button class="mode-btn" id="modeCustom" onclick="setMode('custom')" title="Pick questions from heatmap by speed">Custom</button>
   </div>
   <div style="width:1px;height:28px;background:#444466;flex-shrink:0;"></div>
   <div class="num-row-wrap" style="flex:1;display:flex;flex-direction:column;gap:0;">
@@ -403,8 +454,7 @@ canvas#statsChart {
   </div>
   <div style="width:1px;height:28px;background:#444466;flex-shrink:0;"></div>
   <div id="qcountRow" style="display:flex;gap:8px;flex-shrink:0;">
-    <button class="qcount-btn active" data-count="10" onclick="selectQCount(10)">10</button>
-    <button class="qcount-btn" data-count="25" onclick="selectQCount(25)">25</button>
+    <button class="qcount-btn active" data-count="25" onclick="selectQCount(25)">25</button>
     <button class="qcount-btn" data-count="50" onclick="selectQCount(50)">50</button>
     <button class="qcount-btn" data-count="100" onclick="selectQCount(100)">100</button>
     <button class="qcount-btn" data-count="0" onclick="selectQCount(0)">∞</button>
@@ -505,7 +555,6 @@ canvas#statsChart {
       <div class="help-slide" style="display:none;font-family:'DM Mono',monospace;font-size:12px;color:var(--text);">
         <div style="font-family:'Bebas Neue',sans-serif;font-size:13px;letter-spacing:3px;color:var(--accent);margin-bottom:10px;">QUESTION COUNT</div>
         <svg width="100%" viewBox="0 0 420 60" style="display:block;margin:10px 0 12px;">
-          <text x="30" y="36" text-anchor="middle" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="22" opacity="0.5">10</text>
           <rect x="68" y="14" width="44" height="30" rx="8" fill="#c8f03a" fill-opacity="0.12" stroke="#c8f03a" stroke-width="1"/>
           <text x="90" y="34" text-anchor="middle" fill="#c8f03a" font-family="Bebas Neue,sans-serif" font-size="22">25</text>
           <text x="150" y="36" text-anchor="middle" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="22" opacity="0.5">50</text>
@@ -513,7 +562,7 @@ canvas#statsChart {
           <text x="270" y="36" text-anchor="middle" fill="#888899" font-family="Bebas Neue,sans-serif" font-size="22" opacity="0.5">∞</text>
           <text x="90" y="54" text-anchor="middle" fill="#c8f03a" font-family="DM Mono,monospace" font-size="9" opacity="0.7">active</text>
         </svg>
-        <div style="opacity:0.75;line-height:1.8;">Choose how many questions per session — 10, 25, 50, 100, or infinite.</div>
+        <div style="opacity:0.75;line-height:1.8;">Choose how many questions per session — 25, 50, 100, or infinite.</div>
       </div>
 
       <!-- Slide 4: Starting -->
@@ -570,7 +619,7 @@ canvas#statsChart {
 <!-- ── STATS OVERLAY ─────────────────────────────────────────── -->
 <div id="statsOverlay" style="display:none;position:fixed;inset:0;z-index:400;background:rgba(8,8,15,0.85);">
   <div onclick="toggleStats()" style="position:absolute;inset:0;"></div>
-  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px 36px 28px;width:min(820px,92vw);max-height:90vh;display:flex;flex-direction:column;">
+  <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:32px 36px 28px;width:min(920px,92vw);max-height:90vh;display:flex;flex-direction:column;">
     <button onclick="toggleStats()" style="position:absolute;top:16px;right:20px;background:none;border:none;font-size:20px;cursor:pointer;opacity:0.4;color:var(--text);">✕</button>
 
     <div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:20px;align-items:center;">
@@ -588,10 +637,17 @@ canvas#statsChart {
 
     <div style="flex:1;overflow:auto;">
       <div id="heatmapGrid" class="heatmap-wrap"></div>
-      <div style="display:flex;align-items:center;margin-top:14px;font-size:9px;letter-spacing:2px;opacity:0.5;font-family:'DM Mono',monospace;gap:12px;">
+      <div id="gradientRow" style="display:flex;align-items:center;margin-top:18px;font-size:11px;letter-spacing:2px;opacity:0.7;font-family:'DM Mono',monospace;gap:14px;">
         <span id="heatmapScaleLo">—</span>
-        <div style="flex:1;height:6px;background:linear-gradient(to right,#c8f03a,#f1c40f,#ff8c00,#ff4d6d);border-radius:3px;"></div>
+        <div id="gradientBarWrap" style="flex:1;position:relative;height:24px;display:flex;align-items:center;">
+          <div id="gradientBar" style="width:100%;height:10px;background:linear-gradient(to right,#c8f03a,#f1c40f,#ff8c00,#ff4d6d);border-radius:5px;"></div>
+          <div id="sliderDimLeft"  style="display:none;position:absolute;height:10px;left:0;background:rgba(8,8,15,0.7);pointer-events:none;border-radius:5px 0 0 5px;"></div>
+          <div id="sliderDimRight" style="display:none;position:absolute;height:10px;right:0;background:rgba(8,8,15,0.7);pointer-events:none;border-radius:0 5px 5px 0;"></div>
+          <div id="sliderThumbMin" class="slider-thumb" style="display:none;left:0%;"></div>
+          <div id="sliderThumbMax" class="slider-thumb" style="display:none;left:100%;"></div>
+        </div>
         <span id="heatmapScaleHi">—</span>
+        <span id="customPoolInfo" style="display:none;color:var(--accent);opacity:0.95;letter-spacing:2px;min-width:96px;text-align:right;font-size:13px;">POOL: 0</span>
       </div>
       <div id="heatmapEmpty" style="display:none;text-align:center;padding:40px 20px;opacity:0.4;font-size:11px;letter-spacing:2px;">NO DATA YET — PLAY A SESSION</div>
     </div>
@@ -661,10 +717,9 @@ canvas#statsChart {
   <div class="stats-right">
     <div class="graph-title">Pace over time</div>
     <div class="graph-wrap">
-      <canvas id="statsChart"></canvas>
-    </div>
-    <div class="graph-avg-label">
-      <span><span class="legend-dot" style="background:rgba(200,240,58,0.95)"></span>questions/min</span>
+      <div class="graph-dots-wrap">
+        <canvas id="statsDots"></canvas>
+      </div>
     </div>
   </div>
 </div>
@@ -678,11 +733,31 @@ let qTimerInterval = null;
 let paused = false;
 let isPlaying = false;
 const gameModes = new Set(['normal']);
-let questionLimit = 10;
+let questionLimit = 25;
 let pauseStart = null;
 
 let sessionLog = [];
 let currentAttempts = 0;
+
+// ── CUSTOM MODE STATE ────────────────────────────────────────
+// When customMode is true, the question source becomes customPool — a flat
+// array of {a, b, variant} entries. The slider over the heatmap gradient bar
+// picks which variants from the user's history are in the pool. Variants:
+//   'n'  — normal mode (a × b = ?)         srKey  n:lo,hi
+//   'fr' — factor, smaller factor known    srKey  fr:lo,hi
+//   'fc' — factor, larger factor known     srKey  fc:lo,hi
+let customMode = false;
+let customPool = [];
+let sliderLoPct = 0;    // slider min handle position, 0–100
+let sliderHiPct = 100;  // slider max handle position, 0–100
+// Cached during render so the slider doesn't have to recompute the gradient
+// scale endpoints on every drag tick.
+let heatmapScaleCache = { lo: 0, hi: 1 };
+
+// Per-variant manual overrides. Keyed by srKey ("n:r,c" / "fr:r,c" / "fc:r,c").
+// Value is true (force-included) or false (force-excluded). Slider drags wipe
+// this map — manual edits only persist until the next slider movement.
+const manualVariantOverrides = new Map();
 
 // ── PERSISTENCE ──────────────────────────────────────────────
 // Works in two environments:
@@ -857,7 +932,7 @@ function getCard(a, b, mode) {
 // per-pair buffer. At session end, if the diversity check passes, we merge the
 // buffer into the persistent attemptsByPair store and trim to ATTEMPTS_CAP per
 // pair. If it fails, the buffer is thrown away.
-const SESSION_PAIR_THRESHOLD = 5;
+const SESSION_PAIR_THRESHOLD = 10;
 let sessionAttemptsBuffer = {};  // { srKey: [[t, secs, correct], ...] }
 
 function recordAttempt(a, b, correct, secs, mode) {
@@ -868,14 +943,12 @@ function recordAttempt(a, b, correct, secs, mode) {
   sessionAttemptsBuffer[k].push([Date.now(), correct ? +secs.toFixed(2) : null, correct ? 1 : 0]);
 }
 
-// Distinct canonical pairs covered this session (mode-agnostic, mirror-agnostic).
+// Distinct variants covered this session — each srKey counts separately, so
+// 7×8 (normal), 7×?=56 (fr), and ?×8=56 (fc) are three different questions
+// even though they share a canonical pair. Used to gate whether session
+// attempts get committed to the persistent heatmap stats.
 function distinctPairsThisSession() {
-  const pairs = new Set();
-  for (const k in sessionAttemptsBuffer) {
-    const colon = k.indexOf(':');
-    pairs.add(colon >= 0 ? k.slice(colon + 1) : k);
-  }
-  return pairs.size;
+  return Object.keys(sessionAttemptsBuffer).length;
 }
 
 function commitSessionAttempts() {
@@ -971,6 +1044,19 @@ function retroactiveUpdate() {
 
 // ── WEIGHTED QUESTION PICKER ─────────────────────────────────
 function pickQuestion() {
+  // Custom mode: pool is pre-filtered by the slider. Pick uniformly from it,
+  // but skip the entry that matches the last shown question if possible.
+  if (customMode && customPool.length > 0) {
+    const pool = customPool.length > 1
+      ? customPool.filter(q => !currentQ ||
+          !(q.a === currentQ.a && q.b === currentQ.b &&
+            variantToDisplay(q).mode === currentQ.chosenMode))
+      : customPool;
+    const pick = pool[Math.floor(Math.random() * pool.length)] || customPool[0];
+    const disp = variantToDisplay(pick);
+    return { a: disp.a, b: disp.b, forceMode: disp.mode, hideSide: disp.hideSide };
+  }
+
   const aVals = validValues('a'), bVals = validValues('b');
   const now = Date.now();
   const candidates = [];
@@ -1257,13 +1343,18 @@ function hide(id) { document.getElementById(id).classList.add('hidden'); }
 function startGame() {
   isPlaying = true;
   document.getElementById('topBar').classList.add('hidden-bar');
+  // Close the stats overlay if it's open (custom mode opens it for picking).
+  const statsOverlay = document.getElementById('statsOverlay');
+  if (statsOverlay) statsOverlay.style.display = 'none';
   streak = 0; questionCount = 0; correctCount = 0; paused = false;
   document.querySelectorAll('.input-wrap').forEach(w => w.style.setProperty('--progress', '0%'));
   sessionLog = [];
   sessionAttemptsBuffer = {};
   sessionStart = Date.now();
   nextQuestion();
-  const activeInp = document.getElementById(gameModes.has('normal') ? 'setupAnswerInput' : 'setupAnswerInputF');
+  // currentQ.chosenMode is set by nextQuestion → use it to pick the input.
+  const useFactorInput = currentQ && currentQ.chosenMode === 'factors';
+  const activeInp = document.getElementById(useFactorInput ? 'setupAnswerInputF' : 'setupAnswerInput');
   if (activeInp) { activeInp.value = ''; activeInp.focus(); }
 }
 
@@ -1281,7 +1372,11 @@ function nextQuestion() {
   currentQ = pickQuestion();
   questionCount++;
   currentAttempts = 0;
-  currentQ.hideSide = 'b';
+  // hideSide defaults to 'b' (the renderer's convention), but a pool entry
+  // can specify a different one — e.g. fc-variant factor questions swap a/b
+  // before pickQuestion returns, but we still leave hideSide alone if it's
+  // already set explicitly upstream.
+  if (currentQ.hideSide == null) currentQ.hideSide = 'b';
   currentQ.chosenMode = updateQuestionDisplay(currentQ.a, currentQ.b, currentQ.hideSide, currentQ.forceMode);
   clearInterval(qTimerInterval);
   questionStart = Date.now();
@@ -1335,13 +1430,23 @@ function soloMode(mode) {
 }
 
 function setMode(mode) {
+  // 'custom' is a takeover mode. Clicking it activates; clicking it again
+  // while active does nothing — the user must click Normal or Factor to exit.
+  if (mode === 'custom') {
+    if (customMode) return;
+    enterCustomMode();
+    refreshModeButtons();
+    return;
+  }
+  // Toggling normal/factor exits custom mode automatically
+  if (customMode) exitCustomMode();
+
   if (gameModes.has(mode) && gameModes.size > 1) {
     gameModes.delete(mode);
   } else {
     gameModes.add(mode);
   }
-  document.getElementById('modeNormal').classList.toggle('active', gameModes.has('normal'));
-  document.getElementById('modeFactors').classList.toggle('active', gameModes.has('factors'));
+  refreshModeButtons();
   const aVals = validValues('a');
   const bVals = validValues('b');
   const a = aVals.length ? aVals[aVals.length-1] : 1;
@@ -1349,6 +1454,210 @@ function setMode(mode) {
   document.getElementById('previewA').textContent = a;
   document.getElementById('previewB').textContent = b;
   updateQuestionDisplay(a, b, 'b');
+}
+
+function refreshModeButtons() {
+  document.getElementById('modeNormal').classList.toggle('active', !customMode && gameModes.has('normal'));
+  document.getElementById('modeFactors').classList.toggle('active', !customMode && gameModes.has('factors'));
+  document.getElementById('modeCustom').classList.toggle('active', customMode);
+}
+
+// ── CUSTOM MODE ──────────────────────────────────────────────
+function enterCustomMode() {
+  customMode = true;
+  // Show the slider UI
+  document.getElementById('sliderThumbMin').style.display = '';
+  document.getElementById('sliderThumbMax').style.display = '';
+  document.getElementById('sliderDimLeft').style.display = '';
+  document.getElementById('sliderDimRight').style.display = '';
+  document.getElementById('customPoolInfo').style.display = '';
+  // Reset slider to "everything included"
+  sliderLoPct = 0;
+  sliderHiPct = 100;
+  manualVariantOverrides.clear();
+  positionSliderThumbs();
+  // Open the stats overlay so the user can see what they're picking from.
+  // Build pool after — renderHeatmap fills heatmapScaleCache.
+  const overlay = document.getElementById('statsOverlay');
+  if (overlay.style.display === 'none' || !overlay.style.display) {
+    overlay.style.display = 'block';
+    renderHeatmap();
+  }
+  // Freeze the question-range / mode-count controls — they don't apply to
+  // custom mode, which sources its questions from the heatmap pool instead.
+  document.getElementById('topBar').classList.add('custom-frozen');
+  document.body.classList.add('custom-active');
+  rebuildCustomPool();
+  updatePoolPreview();
+}
+
+function exitCustomMode() {
+  customMode = false;
+  customPool = [];
+  manualVariantOverrides.clear();
+  customPreviewQ = null;
+  document.getElementById('sliderThumbMin').style.display = 'none';
+  document.getElementById('sliderThumbMax').style.display = 'none';
+  document.getElementById('sliderDimLeft').style.display = 'none';
+  document.getElementById('sliderDimRight').style.display = 'none';
+  document.getElementById('customPoolInfo').style.display = 'none';
+  document.getElementById('topBar').classList.remove('custom-frozen');
+  document.body.classList.remove('custom-active');
+  // Restore polygon opacities (variant-level dimming was used in custom mode)
+  document.querySelectorAll('.heatmap-cell polygon[data-variant]').forEach(p => {
+    p.style.opacity = '';
+  });
+  // Unmute any dimmed cells (slider filter is gone)
+  document.querySelectorAll('.heatmap-cell.dimmed').forEach(c => c.classList.remove('dimmed'));
+  // Restore the regular preview from the active number range / modes
+  updateFlicker();
+}
+
+function positionSliderThumbs() {
+  const tMin = document.getElementById('sliderThumbMin');
+  const tMax = document.getElementById('sliderThumbMax');
+  const dimL = document.getElementById('sliderDimLeft');
+  const dimR = document.getElementById('sliderDimRight');
+  if (tMin) tMin.style.left = sliderLoPct + '%';
+  if (tMax) tMax.style.left = sliderHiPct + '%';
+  // Dim overlays cover the *unselected* portions of the bar, so the selected
+  // band shows the gradient at full color while excluded ranges look muted.
+  if (dimL) dimL.style.width = sliderLoPct + '%';
+  if (dimR) dimR.style.width = (100 - sliderHiPct) + '%';
+}
+
+// Map a slider position [0..100] to a real avg-time threshold using the
+// cached heatmap scale endpoints. 0 = lo, 100 = hi. Outside that window the
+// gradient saturates, so a slider at 0 means "include the fastest end"
+// (everything ≤ lo), and 100 means "include the slowest end" (everything ≥ hi).
+function sliderPctToTime(pct) {
+  const { lo, hi } = heatmapScaleCache;
+  return lo + (pct / 100) * (hi - lo);
+}
+
+// Each cell holds up to 3 variants. The slider filter inspects each variant's
+// avg time and includes only those whose color position (i.e. percentile-mapped
+// to [0,100]) falls inside [sliderLoPct, sliderHiPct]. Manual per-variant
+// overrides (set by clicking heatmap regions) take precedence over the slider.
+function rebuildCustomPool() {
+  customPool = [];
+  if (!customMode) return;
+  // Use the same data source as the heatmap: the currently-selected window.
+  // This means slider operates on whatever the user is viewing (last 10 / 50 / all).
+  const dataN  = statsForPrefix('n:',  heatmapWindow);
+  const dataFR = statsForPrefix('fr:', heatmapWindow);
+  const dataFC = statsForPrefix('fc:', heatmapWindow);
+  const loT = sliderPctToTime(sliderLoPct);
+  const hiT = sliderPctToTime(sliderHiPct);
+  // Endpoints stretch: at slider=0, also include sub-lo (lime-clamped) values;
+  // at slider=100, also include super-hi (red-clamped) values. Otherwise the
+  // extremes would be unreachable.
+  const includeBelowLo = sliderLoPct <= 0.01;
+  const includeAboveHi = sliderHiPct >= 99.99;
+
+  function consider(prefix, dataset, variant) {
+    for (const [key, stat] of dataset) {
+      if (stat.avg == null) continue;
+      const fullKey = prefix + key;
+      const override = manualVariantOverrides.get(fullKey);
+      let inRange;
+      if (override === true) {
+        inRange = true;
+      } else if (override === false) {
+        inRange = false;
+      } else {
+        const t = stat.avg;
+        inRange =
+          (t >= loT || includeBelowLo) &&
+          (t <= hiT || includeAboveHi);
+      }
+      if (!inRange) continue;
+      const [r, c] = key.split(',').map(Number);
+      customPool.push({ a: r, b: c, variant });
+    }
+  }
+  consider('n:',  dataN,  'n');
+  consider('fr:', dataFR, 'fr');
+  consider('fc:', dataFC, 'fc');
+}
+
+// Update the heatmap visual: dim variants not in the pool, brighten variants
+// that are. Also update the pool count / preview question.
+let customPreviewQ = null;  // stable preview across slider drags
+function updatePoolPreview() {
+  if (!customMode) return;
+  refreshHeatmapVariantHighlights();
+  // Pool counter — red below the 10-variant threshold (sessions under 10
+  // variants get discarded, so a pool that small can't produce useful stats),
+  // green once you've got enough.
+  const info = document.getElementById('customPoolInfo');
+  if (info) {
+    info.textContent = `POOL: ${customPool.length}`;
+    info.style.color = customPool.length >= 10 ? 'var(--accent)' : 'var(--accent2)';
+  }
+  // Preview: keep the previously-chosen entry if it's still in the pool, so
+  // dragging the slider doesn't make the preview number flicker. Pick a new
+  // one only when the old one is no longer included.
+  if (customPool.length === 0) {
+    customPreviewQ = null;
+    document.getElementById('previewA').textContent = '–';
+    document.getElementById('previewB').textContent = '–';
+    return;
+  }
+  const stillIn = customPreviewQ && customPool.some(q =>
+    q.a === customPreviewQ.a && q.b === customPreviewQ.b && q.variant === customPreviewQ.variant);
+  if (!stillIn) {
+    customPreviewQ = customPool[Math.floor(Math.random() * customPool.length)];
+  }
+  const displayQ = variantToDisplay(customPreviewQ);
+  updateQuestionDisplay(displayQ.a, displayQ.b, displayQ.hideSide, displayQ.mode);
+}
+
+// Walk each polygon in the heatmap and set its opacity based on whether its
+// variant is in the current pool. Excluded variants get a low alpha so the
+// included ones visually pop. Cheap: ~210 cells × up to 3 polys.
+function refreshHeatmapVariantHighlights() {
+  if (!customMode) return;
+  // Build a Set of "prefix:r,c" keys that are currently in the pool
+  const inPool = new Set();
+  for (const q of customPool) {
+    const prefix = q.variant === 'n' ? 'n:' : (q.variant === 'fr' ? 'fr:' : 'fc:');
+    // pool entries always have a <= b (canonical). For fc, the pool entry was
+    // emitted with the canonical (a, b) from the srKey, so just use those.
+    inPool.add(`${prefix}${q.a},${q.b}`);
+  }
+  document.querySelectorAll('.heatmap-cell.has-data').forEach(cell => {
+    const cellKey = cell.dataset.cell;
+    if (!cellKey) return;
+    const [rStr, cStr] = cellKey.split(',');
+    const isSquare = rStr === cStr;
+    cell.querySelectorAll('polygon[data-variant]').forEach(poly => {
+      let variant = poly.dataset.variant;
+      // On squares, the visible "fr" polygon represents the only factor variant;
+      // it's stored under fr: in the data, so just look it up directly.
+      const prefix = variant === 'n' ? 'n:' : (variant === 'fr' ? 'fr:' : 'fc:');
+      const inSet = inPool.has(`${prefix}${cellKey}`);
+      poly.style.opacity = inSet ? '1' : '0.15';
+    });
+  });
+}
+
+// Convert a pool entry {a, b, variant} into the {a, b, mode, hideSide} the
+// renderer/checker expects. The trick for 'fc' (larger factor known) is to
+// swap a/b so the renderer's hideSide='b' convention shows the right value
+// as the known factor.
+function variantToDisplay(q) {
+  if (q.variant === 'n') {
+    return { a: q.a, b: q.b, mode: 'normal', hideSide: 'b' };
+  }
+  // Factor mode: srKeys store (lo, hi) canonically — for fr the known factor
+  // is the smaller (lo = q.a here since pool entries preserve a<=b from key),
+  // for fc the known factor is the larger.
+  if (q.variant === 'fr') {
+    return { a: q.a, b: q.b, mode: 'factors', hideSide: 'b' };  // known = a (smaller)
+  }
+  // fc: known = b (larger). Swap so the known sits in the 'a' slot.
+  return { a: q.b, b: q.a, mode: 'factors', hideSide: 'b' };
 }
 
 
@@ -1490,16 +1799,22 @@ function newGame() {
 
 // ── STATS CHART ──────────────────────────────────────────────
 function drawChart() {
-  const canvas = document.getElementById('statsChart');
-  const wrap   = canvas.parentElement;
-  canvas.width  = wrap.clientWidth  * window.devicePixelRatio;
-  canvas.height = wrap.clientHeight * window.devicePixelRatio;
-  canvas.style.width  = wrap.clientWidth  + 'px';
-  canvas.style.height = wrap.clientHeight + 'px';
+  const dotsCanvas = document.getElementById('statsDots');
+  const dotsWrap = dotsCanvas.parentElement;
 
-  const ctx = canvas.getContext('2d');
-  ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-  const W = wrap.clientWidth, H = wrap.clientHeight;
+  function sizeCanvas(canvas, wrap) {
+    canvas.width  = wrap.clientWidth  * window.devicePixelRatio;
+    canvas.height = wrap.clientHeight * window.devicePixelRatio;
+    canvas.style.width  = wrap.clientWidth  + 'px';
+    canvas.style.height = wrap.clientHeight + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);  // reset before re-scaling
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    return ctx;
+  }
+
+  const ctx = sizeCanvas(dotsCanvas, dotsWrap);
+  const W = dotsWrap.clientWidth, H = dotsWrap.clientHeight;
 
   if (sessionLog.length === 0) return;
 
@@ -1514,113 +1829,191 @@ function drawChart() {
   }
   const totalElapsed = elapsedAt[elapsedAt.length - 1];
 
-  // Running questions per minute, sampled at each question completion.
-  // At question i (1-indexed), qpm = i / (elapsedAt[i-1] / 60). X uses the
-  // actual fractional submit time so two completions in the same second don't
-  // stack on a single x slot.
-  const qpmSamples = elapsedAt.map((t, i) => [t, (i + 1) / (t / 60)]);
-  const qpm = qpmSamples.map(s => s[1]);  // for axis scaling
-
-  const pad = { top: 16, right: 20, bottom: 32, left: 60 };
+  const pad = { top: 16, right: 60, bottom: 32, left: 60 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top  - pad.bottom;
 
-  // Y-left scale: qpm. Pad ±20% (min 15) around observed range so dots don't
-  // look like jagged peaks — gives the curve room to read as a gentle shape.
-  let qpmMin, qpmMax;
-  if (qpm.length > 0) {
-    const observedMin = Math.min(...qpm);
-    const observedMax = Math.max(...qpm);
-    const span = Math.max(observedMax - observedMin, 1);
-    const padQ = Math.max(span * 0.5, 15);
-    qpmMin = Math.max(0, Math.floor(observedMin - padQ));
-    qpmMax = Math.ceil(observedMax + padQ);
-  } else {
-    qpmMin = 0; qpmMax = 30;
-  }
-  const qpmRange = Math.max(qpmMax - qpmMin, 1);
+  // Y scale: per-question seconds. From 0 to slightly above max so the slowest
+  // dot doesn't sit on the top edge.
+  const maxSec = Math.max(...secs);
+  const yMin = 0;
+  const yMax = Math.max(maxSec * 1.15, 1);
+  const yRange = yMax - yMin;
 
-  const xPos  = t => pad.left + (totalElapsed > 0 ? (t / totalElapsed) : 0) * plotW;
-  const yQpm  = q => pad.top + plotH - ((q - qpmMin) / qpmRange) * plotH;
+  // Color scale — same 10th/90th percentile clipping as the heatmap so colors
+  // mean the same thing visually. Falls back to min/max if the session is short.
+  const sortedSecs = [...secs].sort((a, b) => a - b);
+  const dotLo = sortedSecs[Math.floor(sortedSecs.length * 0.1)] ?? sortedSecs[0];
+  const dotHi = sortedSecs[Math.floor(sortedSecs.length * 0.9)] ?? sortedSecs[sortedSecs.length - 1];
 
-  // Gridlines + Y-axis labels
-  ctx.lineWidth = 1;
-  const ticks = 4;
+  const xPos = t => pad.left + (totalElapsed > 0 ? (t / totalElapsed) : 0) * plotW;
+  const yPos = s => pad.top + plotH - ((s - yMin) / yRange) * plotH;
+
+  // Gridlines + Y-axis numeric labels on the left
   ctx.font = `10px 'DM Mono', monospace`;
+  const ticks = 4;
   for (let i = 0; i <= ticks; i++) {
     const y = pad.top + (plotH / ticks) * i;
     ctx.strokeStyle = 'rgba(255,255,255,0.04)';
-    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(pad.left + plotW, y); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(pad.left + plotW, y);
+    ctx.stroke();
 
-    const qpmVal = qpmMax - (qpmRange / ticks) * i;
+    const secVal = yMax - (yRange / ticks) * i;
     ctx.fillStyle = 'rgba(200,240,58,0.55)';
     ctx.textAlign = 'right';
-    ctx.fillText(Math.round(qpmVal), pad.left - 6, y + 3);
+    ctx.fillText(secVal.toFixed(1), pad.left - 6, y + 3);
   }
 
-  // Y-axis label (rotated)
+  // Y-axis label (rotated) on the far left
   ctx.save();
   ctx.font = `9px 'DM Mono', monospace`;
   ctx.fillStyle = 'rgba(200,240,58,0.55)';
   ctx.textAlign = 'center';
-  ctx.translate(pad.left - 32, pad.top + plotH / 2);
+  ctx.translate(pad.left - 38, pad.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
-  ctx.fillText('QUESTIONS / MIN', 0, 0);
+  ctx.fillText('SECONDS', 0, 0);
   ctx.restore();
+
+  // Vertical gradient bar on the right, spanning the full plot height.
+  // The middle portion (dotLo→dotHi) shows the full lime→red gradient — that's
+  // the active color-mapping zone. Above dotHi, the bar continues solid red;
+  // below dotLo, solid lime. This matches how dots are actually colored
+  // (clamped at both ends), so a dot's color always corresponds to the bar's
+  // color at the same Y position.
+  const barW = 6;
+  const barX = pad.left + plotW + 12;
+  const barTopY = pad.top;
+  const barBotY = pad.top + plotH;
+  const gradTopY = Math.max(barTopY, Math.min(barBotY, yPos(dotHi)));
+  const gradBotY = Math.max(barTopY, Math.min(barBotY, yPos(dotLo)));
+
+  // Clip to a rounded rectangle so the fills get clean rounded ends without
+  // having to manually mask corners.
+  ctx.save();
+  const r = barW / 2;
+  ctx.beginPath();
+  ctx.moveTo(barX, barTopY + r);
+  ctx.arc(barX + r, barTopY + r, r, Math.PI, 0);
+  ctx.lineTo(barX + barW, barBotY - r);
+  ctx.arc(barX + r, barBotY - r, r, 0, Math.PI);
+  ctx.closePath();
+  ctx.clip();
+
+  // Solid red cap above the gradient (values ≥ dotHi)
+  if (gradTopY > barTopY) {
+    ctx.fillStyle = '#ff4d6d';
+    ctx.fillRect(barX, barTopY, barW, gradTopY - barTopY);
+  }
+  // The actual gradient from dotHi (red) down to dotLo (lime)
+  if (gradBotY > gradTopY) {
+    const grad = ctx.createLinearGradient(0, gradTopY, 0, gradBotY);
+    grad.addColorStop(0,    '#ff4d6d');
+    grad.addColorStop(0.33, '#ff8c00');
+    grad.addColorStop(0.66, '#f1c40f');
+    grad.addColorStop(1,    '#c8f03a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(barX, gradTopY, barW, gradBotY - gradTopY);
+  }
+  // Solid lime tail below the gradient (values ≤ dotLo)
+  if (barBotY > gradBotY) {
+    ctx.fillStyle = '#c8f03a';
+    ctx.fillRect(barX, gradBotY, barW, barBotY - gradBotY);
+  }
+  ctx.restore();
+
+  // Labels at the gradient transition points — right of the bar
+  ctx.font = `10px 'DM Mono', monospace`;
+  ctx.fillStyle = 'rgba(200,240,58,0.65)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`≥${dotHi.toFixed(1)}s`, barX + barW + 4, gradTopY);
+  ctx.fillText(`≤${dotLo.toFixed(1)}s`, barX + barW + 4, gradBotY);
+  ctx.textBaseline = 'alphabetic';
 
   // X-axis ticks at sensible intervals
   ctx.textAlign = 'center';
   ctx.fillStyle = 'rgba(255,255,255,0.3)';
   ctx.font = `9px 'DM Mono', monospace`;
-  // Pick a tick interval: 5, 10, 15, 30, 60, 120... whichever gives ~5–8 ticks
   const tickCandidates = [5, 10, 15, 30, 60, 120, 300, 600];
   const tickInterval = tickCandidates.find(t => totalElapsed / t <= 8) || tickCandidates[tickCandidates.length - 1];
   for (let t = 0; t <= totalElapsed; t += tickInterval) {
     ctx.fillText(t + 's', xPos(t), H - pad.bottom + 14);
   }
-  // Also label the actual end if not on a tick
   if (totalElapsed % tickInterval > tickInterval * 0.3) {
     ctx.fillText(Math.round(totalElapsed) + 's', xPos(totalElapsed), H - pad.bottom + 14);
   }
 
-  // Smooth path through (x, y) points — cardinal spline
-  function smoothPath(pts) {
-    if (pts.length < 2) return;
-    const tension = 0.3;
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 0; i < pts.length - 1; i++) {
-      const p0 = pts[Math.max(i-1, 0)];
-      const p1 = pts[i];
-      const p2 = pts[i+1];
-      const p3 = pts[Math.min(i+2, pts.length-1)];
-      ctx.bezierCurveTo(
-        p1[0] + (p2[0] - p0[0]) * tension, p1[1] + (p2[1] - p0[1]) * tension,
-        p2[0] - (p3[0] - p1[0]) * tension, p2[1] - (p3[1] - p1[1]) * tension,
-        p2[0], p2[1]
-      );
-    }
-  }
+  // Dots — each question colored by its solve time using the heatmap gradient.
+  // Outliers (≥ dotHi, the red end of the gradient) get a small label so you
+  // can see which questions tripped you up. Skip labelling if the whole session
+  // sits within a narrow band — the percentile threshold can be misleading on
+  // very fast/uniform sessions.
+  const sessionMedian = sortedSecs[Math.floor(sortedSecs.length / 2)];
+  const labelOutliers = sessionLog.length >= 4 && dotHi >= sessionMedian * 1.5;
 
-  // Running questions per minute: smoothed line connecting per-completion
-  // points, with the actual data points marked as faint dots underneath.
-  const qpmPts = qpmSamples.map(([t, q]) => [xPos(t), yQpm(q)]);
-
-  // Faint dots first (so the line sits on top)
-  ctx.fillStyle = 'rgba(200,240,58,0.4)';
-  for (const [x, y] of qpmPts) {
+  // Pass 1: draw all dots first so labels render on top
+  for (let i = 0; i < sessionLog.length; i++) {
+    const t = elapsedAt[i];
+    const s = secs[i];
     ctx.beginPath();
-    ctx.arc(x, y, 2, 0, Math.PI * 2);
+    ctx.arc(xPos(t), yPos(s), 3.5, 0, Math.PI * 2);
+    ctx.fillStyle = colorFor({ avg: s }, dotLo, dotHi);
     ctx.fill();
   }
 
-  // Smoothed line on top
-  if (qpmPts.length >= 2) {
-    ctx.beginPath();
-    smoothPath(qpmPts);
-    ctx.strokeStyle = 'rgba(200,240,58,0.95)';
-    ctx.lineWidth = 2.5;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
+  // Pass 2: outlier labels
+  if (labelOutliers) {
+    ctx.font = `10px 'DM Mono', monospace`;
+    ctx.textBaseline = 'middle';
+    const labelPad = 7;          // distance from dot to label
+    const rightEdge = pad.left + plotW;
+
+    // Build label data, then sort by x to do simple overlap avoidance later
+    const labels = [];
+    for (let i = 0; i < sessionLog.length; i++) {
+      const s = secs[i];
+      if (s < dotHi) continue;
+      const q = sessionLog[i];
+      const text = q.chosenMode === 'factors'
+        ? `${q.a}×?=${q.a * q.b}`
+        : `${q.a}×${q.b}`;
+      const x = xPos(elapsedAt[i]);
+      const y = yPos(s);
+      const tw = ctx.measureText(text).width;
+      // Flip left if too close to the right edge
+      const flipLeft = (x + labelPad + tw + 4) > rightEdge;
+      labels.push({ x, y, text, tw, flipLeft });
+    }
+
+    // Light overlap avoidance: if two labels are within 14px vertically AND
+    // their text would horizontally collide, nudge the later one down 12px.
+    // Same-axis ordering keeps it predictable.
+    labels.sort((a, b) => a.x - b.x);
+    for (let i = 1; i < labels.length; i++) {
+      const cur = labels[i];
+      const prev = labels[i - 1];
+      const prevR = prev.flipLeft ? prev.x - labelPad : prev.x + labelPad + prev.tw;
+      const prevL = prev.flipLeft ? prev.x - labelPad - prev.tw : prev.x + labelPad;
+      const curL  = cur.flipLeft  ? cur.x  - labelPad - cur.tw  : cur.x  + labelPad;
+      const curR  = cur.flipLeft  ? cur.x  - labelPad           : cur.x  + labelPad + cur.tw;
+      const xOverlap = !(curR < prevL || curL > prevR);
+      if (xOverlap && Math.abs(cur.y - prev.y) < 14) {
+        cur.y = prev.y + 14;
+      }
+    }
+
+    for (const lbl of labels) {
+      ctx.fillStyle = 'rgba(232,232,240,0.85)';
+      if (lbl.flipLeft) {
+        ctx.textAlign = 'right';
+        ctx.fillText(lbl.text, lbl.x - labelPad, lbl.y);
+      } else {
+        ctx.textAlign = 'left';
+        ctx.fillText(lbl.text, lbl.x + labelPad, lbl.y);
+      }
+    }
   }
 }
 
@@ -1772,31 +2165,44 @@ function renderHeatmap() {
   const lo = allAvgs[Math.floor(allAvgs.length * 0.1)] || allAvgs[0];
   const hi = allAvgs[Math.floor(allAvgs.length * 0.9)] || allAvgs[allAvgs.length - 1];
 
+  // Cache for the custom-mode slider, which maps its 0–100 positions to this
+  // [lo, hi] range. Without the cache the slider would have to recompute on
+  // every drag tick.
+  heatmapScaleCache = { lo, hi };
+
   document.getElementById('heatmapScaleLo').textContent = `≤${lo.toFixed(1)}s`;
   document.getElementById('heatmapScaleHi').textContent = `≥${hi.toFixed(1)}s`;
 
-  // Three SVG polygons in each cell (viewBox 0 0 10 10):
-  //   Normal       : (0,0)-(10,10)-(0,10)   — bottom-left HALF
-  //   Factor row=k : (0,0)-(10,0)-(5,5)     — top QUARTER (apex at center)
-  //   Factor col=k : (10,0)-(10,10)-(5,5)   — right QUARTER
-  const POLY_N  = '0,0 10,10 0,10';
-  const POLY_FR = '0,0 10,0 5,5';
-  const POLY_FC = '10,0 10,10 5,5';
+  // Polygon shapes for each region inside a cell (viewBox 0 0 10 10):
+  //   Normal      : (0,0)-(10,10)-(0,10)   — bottom-left HALF
+  //   Factor row=k: (0,0)-(10,0)-(5,5)     — top QUARTER (apex at center)
+  //   Factor col=k: (10,0)-(10,10)-(5,5)   — right QUARTER
+  //   Factor full : (0,0)-(10,0)-(10,10)   — top-right HALF (squares: fr only)
+  const POLY_N       = '0,0 10,10 0,10';
+  const POLY_FR      = '0,0 10,0 5,5';
+  const POLY_FC      = '10,0 10,10 5,5';
+  const POLY_FACTOR  = '0,0 10,0 10,10';
   const NO_DATA = 'rgba(255,255,255,0.04)';
 
   function tipHTML(r, c, dN, dFR, dFC, colorN, colorFR, colorFC) {
     const showCount = heatmapWindow === 0;
+    const isSquare = (r === c);
     const fmt = (d) => {
       const t = d.avg != null ? d.avg.toFixed(2) + 's' : '—';
       return showCount ? `${t} · ${d.attempts} ${d.attempts === 1 ? 'time' : 'times'}` : t;
     };
     // Each line: a 14×14 SVG with the corresponding cell region filled in its
     // cell-specific color, then the prompt + stats text.
+    // For squares the factor row uses the full top-right triangle (POLY_FACTOR)
+    // since fc collapses to fr — matching what's shown in the heatmap cell.
     const row = (poly, color, label, stats) =>
       `<div class="tip-row"><svg viewBox="0 0 10 10" width="14" height="14" style="flex-shrink:0;"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="rgba(255,255,255,0.18)" stroke-width="0.6"/><g transform="translate(0.8 0.8) scale(0.84)"><polygon points="${poly}" fill="${color}"/></g></svg><span>${label}&nbsp;&nbsp;<span class="tip-stats">${stats}</span></span></div>`;
     const rows = [];
     if (dN)  rows.push(row(POLY_N,  colorN,  `${r}×${c} = ?`,    fmt(dN)));
-    if (dFR) rows.push(row(POLY_FR, colorFR, `${r}×? = ${r*c}`,  fmt(dFR)));
+    if (dFR) {
+      const factorPoly = isSquare ? POLY_FACTOR : POLY_FR;
+      rows.push(row(factorPoly, colorFR, `${r}×? = ${r*c}`,  fmt(dFR)));
+    }
     if (dFC) rows.push(row(POLY_FC, colorFC, `?×${c} = ${r*c}`,  fmt(dFC)));
     if (rows.length === 0) return '<div class="tip-row" style="opacity:0.6;">no data</div>';
     return rows.join('');
@@ -1816,16 +2222,25 @@ function renderHeatmap() {
       const dN  = dataN.get(key);
       const dFR = dataFR.get(key);
       // For r == c, fc collapses to fr (one variant only), so don't read fc.
-      const dFC = (r === c) ? null : dataFC.get(key);
+      const isSquare = (r === c);
+      const dFC = isSquare ? null : dataFC.get(key);
       const colorN  = colorFor(dN,  lo, hi);
       const colorFR = colorFor(dFR, lo, hi);
-      const colorFC = (r === c) ? NO_DATA : colorFor(dFC, lo, hi);
+      const colorFC = isSquare ? NO_DATA : colorFor(dFC, lo, hi);
       const tip = tipHTML(r, c, dN, dFR, dFC, colorN, colorFR, colorFC).replace(/"/g, '&quot;');
-      html += `<div class="heatmap-cell has-data" data-tip="${tip}">
+      // Squares: only two regions — normal (bottom-left half) + factor (top-right half).
+      // Non-squares: three regions — normal + fr (top quarter) + fc (right quarter).
+      // data-variant on each polygon lets the custom-mode picker hit-test
+      // clicks and toggle individual variants visually.
+      const polys = isSquare
+        ? `<polygon points="${POLY_N}" fill="${colorN}" data-variant="n"/>
+           <polygon points="${POLY_FACTOR}" fill="${colorFR}" data-variant="fr"/>`
+        : `<polygon points="${POLY_N}"  fill="${colorN}" data-variant="n"/>
+           <polygon points="${POLY_FR}" fill="${colorFR}" data-variant="fr"/>
+           <polygon points="${POLY_FC}" fill="${colorFC}" data-variant="fc"/>`;
+      html += `<div class="heatmap-cell has-data" data-tip="${tip}" data-cell="${r},${c}">
         <svg viewBox="0 0 10 10" preserveAspectRatio="none" style="width:100%;height:100%;display:block;">
-          <polygon points="${POLY_N}"  fill="${colorN}"/>
-          <polygon points="${POLY_FR}" fill="${colorFR}"/>
-          <polygon points="${POLY_FC}" fill="${colorFC}"/>
+          ${polys}
         </svg>
       </div>`;
     }
@@ -1833,6 +2248,13 @@ function renderHeatmap() {
   }
   grid.innerHTML = html;
   attachHeatmapTooltip(grid);
+  // If custom mode is active, refresh the pool (the heatmap may have just
+  // been switched to a different window — last 10 / 50 / all).
+  if (customMode) {
+    rebuildCustomPool();
+    updatePoolPreview();
+    refreshHeatmapVariantHighlights();
+  }
 }
 
 // Fast custom tooltip — appears instantly on hover, no browser delay.
@@ -1862,6 +2284,43 @@ function attachHeatmapTooltip(grid) {
     hmTooltipEl.style.top  = y + 'px';
   };
   grid.onmouseleave = () => { hmTooltipEl.style.display = 'none'; };
+
+  // Click handler — only active in custom mode. Hit-tests which variant region
+  // of the cell was clicked and toggles that variant's manual override.
+  grid.onclick = (e) => {
+    if (!customMode) return;
+    const cell = e.target.closest('.heatmap-cell.has-data');
+    if (!cell) return;
+    const cellKey = cell.dataset.cell;
+    if (!cellKey) return;
+    const [r, c] = cellKey.split(',').map(Number);
+    const isSquare = r === c;
+    // Position within cell, normalized 0..10 to match the polygon viewBox
+    const rect = cell.getBoundingClientRect();
+    const bx = ((e.clientX - rect.left) / rect.width) * 10;
+    const by = ((e.clientY - rect.top)  / rect.height) * 10;
+    // Quadrants of the cell (split by the two diagonals y=x and y=10-x):
+    //   top    (by < bx AND by < 10-bx) → fr
+    //   right  (by < bx AND by > 10-bx) → fc  (or fr on squares)
+    //   bottom (by > bx AND by > 10-bx) → n
+    //   left   (by > bx AND by < 10-bx) → n
+    let variant;
+    if (by < bx && by < 10 - bx)              variant = 'fr';
+    else if (by < bx)                          variant = isSquare ? 'fr' : 'fc';
+    else                                       variant = 'n';
+    // Only toggle if data actually exists for that variant — otherwise the
+    // click would create a phantom pool entry.
+    const prefix = variant === 'n' ? 'n:' : (variant === 'fr' ? 'fr:' : 'fc:');
+    const dataset = statsForPrefix(prefix, heatmapWindow);
+    if (!dataset.get(cellKey)) return;
+    const fullKey = prefix + cellKey;
+    // Toggle: if currently in pool → exclude; else → include.
+    const currentlyIn = customPool.some(q =>
+      q.a === r && q.b === c && q.variant === variant);
+    manualVariantOverrides.set(fullKey, !currentlyIn);
+    rebuildCustomPool();
+    updatePoolPreview();
+  };
 }
 
 // ── PAUSE ────────────────────────────────────────────────────
@@ -1913,12 +2372,82 @@ function updateFlicker(changedN) {
   updateQuestionDisplay(a, b, 'b');
 }
 
+// ── CUSTOM-MODE SLIDER WIRING ────────────────────────────────
+function initCustomSlider() {
+  const wrap   = document.getElementById('gradientBarWrap');
+  const tMin   = document.getElementById('sliderThumbMin');
+  const tMax   = document.getElementById('sliderThumbMax');
+  if (!wrap || !tMin || !tMax) return;
+  let activeThumb = null;
+
+  function pctFromEvent(e) {
+    const r = wrap.getBoundingClientRect();
+    const pct = ((e.clientX - r.left) / r.width) * 100;
+    return Math.max(0, Math.min(100, pct));
+  }
+
+  function onMove(e) {
+    if (!activeThumb) return;
+    e.preventDefault();
+    let p = pctFromEvent(e);
+    // Enforce a small minimum gap so the handles don't pin together
+    const MIN_GAP = 2;
+    if (activeThumb === tMin) {
+      p = Math.min(p, sliderHiPct - MIN_GAP);
+      sliderLoPct = Math.max(0, p);
+    } else {
+      p = Math.max(p, sliderLoPct + MIN_GAP);
+      sliderHiPct = Math.min(100, p);
+    }
+    // Slider movement wipes manual variant edits — the user explicitly chose
+    // this rule: the slider is the source of truth after a drag, and per-cell
+    // tweaks layer on top until the next drag.
+    if (manualVariantOverrides.size > 0) {
+      manualVariantOverrides.clear();
+      refreshHeatmapVariantHighlights();
+    }
+    positionSliderThumbs();
+    rebuildCustomPool();
+    updatePoolPreview();
+  }
+
+  function onUp() {
+    if (activeThumb) activeThumb.classList.remove('dragging');
+    activeThumb = null;
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  }
+
+  [tMin, tMax].forEach(thumb => {
+    thumb.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      activeThumb = thumb;
+      thumb.classList.add('dragging');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+
+  // Click on bar to move the nearest thumb to that position
+  wrap.addEventListener('mousedown', (e) => {
+    if (e.target === tMin || e.target === tMax) return;
+    const p = pctFromEvent(e);
+    const nearer = Math.abs(p - sliderLoPct) <= Math.abs(p - sliderHiPct) ? tMin : tMax;
+    activeThumb = nearer;
+    nearer.classList.add('dragging');
+    onMove(e);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 // ── INIT ─────────────────────────────────────────────────────
 buildNumRow();
 updateAxisHighlight();
 validateStart();
 updateFlicker();
 loadCards();
+initCustomSlider();
 </script>
 </body>
 </html>
