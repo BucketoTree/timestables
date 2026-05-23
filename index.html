@@ -1840,11 +1840,11 @@ function drawChart() {
   const yMax = Math.max(maxSec * 1.15, 1);
   const yRange = yMax - yMin;
 
-  // Color scale — same 10th/90th percentile clipping as the heatmap so colors
+  // Color scale — same 5th/95th percentile clipping as the heatmap so colors
   // mean the same thing visually. Falls back to min/max if the session is short.
   const sortedSecs = [...secs].sort((a, b) => a - b);
-  const dotLo = sortedSecs[Math.floor(sortedSecs.length * 0.1)] ?? sortedSecs[0];
-  const dotHi = sortedSecs[Math.floor(sortedSecs.length * 0.9)] ?? sortedSecs[sortedSecs.length - 1];
+  const dotLo = sortedSecs[Math.floor(sortedSecs.length * 0.05)] ?? sortedSecs[0];
+  const dotHi = sortedSecs[Math.floor(sortedSecs.length * 0.95)] ?? sortedSecs[sortedSecs.length - 1];
 
   const xPos = t => pad.left + (totalElapsed > 0 ? (t / totalElapsed) : 0) * plotW;
   const yPos = s => pad.top + plotH - ((s - yMin) / yRange) * plotH;
@@ -2162,8 +2162,8 @@ function renderHeatmap() {
     return;
   }
   allAvgs.sort((a, b) => a - b);
-  const lo = allAvgs[Math.floor(allAvgs.length * 0.1)] || allAvgs[0];
-  const hi = allAvgs[Math.floor(allAvgs.length * 0.9)] || allAvgs[allAvgs.length - 1];
+  const lo = allAvgs[Math.floor(allAvgs.length * 0.05)] || allAvgs[0];
+  const hi = allAvgs[Math.floor(allAvgs.length * 0.95)] || allAvgs[allAvgs.length - 1];
 
   // Cache for the custom-mode slider, which maps its 0–100 positions to this
   // [lo, hi] range. Without the cache the slider would have to recompute on
