@@ -1046,6 +1046,15 @@ function retroactiveUpdate() {
 }
 
 // ── WEIGHTED QUESTION PICKER ─────────────────────────────────
+// "Unseen" = no card yet, or the card has zero committed attempts. Brand-new
+// variants get prioritized before any repeats — gives breadth-first coverage
+// of whatever set the user is practicing, and avoids drilling the same few
+// questions while others sit untouched.
+function isUnseenVariant(a, b, mode) {
+  const card = srCards[srKey(a, b, mode)];
+  return !card || !card.lifeN;
+}
+
 function pickQuestion() {
   // Custom mode: pool is pre-filtered by the slider. Pick uniformly from it,
   // but skip the entry that matches the last shown question if possible.
@@ -1060,7 +1069,21 @@ function pickQuestion() {
           return !(disp.a === currentQ.a && disp.b === currentQ.b && disp.mode === currentQ.chosenMode);
         })
       : customPool;
-    const pick = pool[Math.floor(Math.random() * pool.length)] || customPool[0];
+    // Prioritize variants with no recorded attempts — every entry in the
+    // pool deserves at least one appearance before any repeats happen.
+    const unseen = pool.filter(q => {
+      const mode = q.variant === 'n' ? 'normal' : 'factors';
+      // For custom-pool factor variants, the srKey lookup needs the canonical
+      // (a, b) form which is what's stored in q (pool entries preserve a<=b).
+      // But isUnseenVariant calls srKey() internally, so passing the swapped
+      // fc-variant a/b would give the wrong key. Easier: call srCards directly
+      // with the canonical srKey assembly.
+      const prefix = q.variant === 'n' ? 'n:' : (q.variant === 'fr' ? 'fr:' : 'fc:');
+      const card = srCards[`${prefix}${q.a},${q.b}`];
+      return !card || !card.lifeN;
+    });
+    const candidates = unseen.length > 0 ? unseen : pool;
+    const pick = candidates[Math.floor(Math.random() * candidates.length)] || customPool[0];
     const disp = variantToDisplay(pick);
     return { a: disp.a, b: disp.b, forceMode: disp.mode, hideSide: disp.hideSide };
   }
@@ -1114,6 +1137,14 @@ function pickQuestion() {
     return true;
   });
   const source = pool.length > 0 ? pool : candidates;
+  // Unseen-first: if any candidate has zero committed attempts, pick from
+  // among those uniformly and skip the weighted logic entirely. New variants
+  // get one appearance each before any repeats.
+  const unseen = source.filter(c => isUnseenVariant(c.a, c.b, c.mode));
+  if (unseen.length > 0) {
+    const pick = unseen[Math.floor(Math.random() * unseen.length)];
+    return { a: pick.a, b: pick.b, forceMode: pick.mode };
+  }
   const total = source.reduce((s, c) => s + c.weight, 0);
   let r = Math.random() * total;
   for (const c of source) {
