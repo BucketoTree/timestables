@@ -628,9 +628,9 @@ body.custom-active #factorProduct {
       <div style="display:flex;align-items:center;gap:10px;font-size:9px;letter-spacing:2px;opacity:0.5;font-family:'DM Mono',monospace;">
         <span>LAST</span>
         <div id="windowPills" style="display:flex;gap:0;">
-          <button class="stats-tab active" data-window="10" onclick="setHeatmapWindow(10)">10</button>
+          <button class="stats-tab" data-window="10" onclick="setHeatmapWindow(10)">10</button>
           <button class="stats-tab" data-window="50" onclick="setHeatmapWindow(50)">50</button>
-          <button class="stats-tab" data-window="0"  onclick="setHeatmapWindow(0)">ALL</button>
+          <button class="stats-tab active" data-window="0"  onclick="setHeatmapWindow(0)">ALL</button>
         </div>
       </div>
     </div>
@@ -2176,7 +2176,7 @@ function toggleHelp() {
 }
 
 // ── STATS OVERLAY ────────────────────────────────────────────
-let heatmapWindow = 10;  // 0 = ALL, else N most recent attempts per pair
+let heatmapWindow = 0;  // 0 = ALL, else N most recent attempts per pair
 
 function toggleStats() {
   const el = document.getElementById('statsOverlay');
@@ -2262,23 +2262,25 @@ function statsForPrefix(prefix, windowN) {
 // 4× = full red, everything in between interpolates. Tunable.
 const BASELINE_RED_MULT = 4;
 
-// Compute the "recent best" baseline across all your variants.
-//   - For each variant with attempt history, take the avg time across its
-//     last 10 attempts (its recent average).
-//   - From those per-variant recent avgs, keep the fastest 10.
+// Compute the baseline used as the gradient's lime anchor.
+//   - For each variant with attempt history, take its *all-time* average
+//     across every committed attempt.
+//   - From those per-variant lifetime avgs, keep the fastest 10.
 //   - Median those = the baseline.
-// This means the lime end of the gradient tracks how fast you actually are
-// right now: as you improve, baseline drops and your old "fast" times start
-// looking less green. Returns null if no variants have any data yet.
+// Lifetime avg is more stable than recent windows — a single drilling burst
+// can't warp it much because it's diluted across all prior attempts. As you
+// accumulate more sessions the baseline tightens naturally, but won't snap
+// in response to one focused 100-question drill.
+// Returns null if no variants have any data yet.
 function computeBaseline() {
-  const recentAvgs = [];
-  for (const k in attemptsByPair) {
-    const s = pairStatsFromAttempts(k, 10);
-    if (s && s.avg != null) recentAvgs.push(s.avg);
+  const lifetimeAvgs = [];
+  for (const k in srCards) {
+    const s = pairStatsLifetime(k);
+    if (s && s.avg != null) lifetimeAvgs.push(s.avg);
   }
-  if (recentAvgs.length === 0) return null;
-  recentAvgs.sort((a, b) => a - b);
-  const fastest = recentAvgs.slice(0, Math.min(10, recentAvgs.length));
+  if (lifetimeAvgs.length === 0) return null;
+  lifetimeAvgs.sort((a, b) => a - b);
+  const fastest = lifetimeAvgs.slice(0, Math.min(10, lifetimeAvgs.length));
   const mid = Math.floor(fastest.length / 2);
   // Median: middle element for odd-length, avg of middle two for even-length.
   if (fastest.length % 2 === 1) return fastest[mid];
