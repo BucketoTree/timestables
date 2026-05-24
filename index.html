@@ -1046,11 +1046,16 @@ function retroactiveUpdate() {
 function pickQuestion() {
   // Custom mode: pool is pre-filtered by the slider. Pick uniformly from it,
   // but skip the entry that matches the last shown question if possible.
+  // The compare has to be done in *displayed* form, not canonical form,
+  // because fc-variant pool entries swap a/b in variantToDisplay — so
+  // comparing q.a/q.b directly against currentQ.a/currentQ.b misses the dupe.
   if (customMode && customPool.length > 0) {
     const pool = customPool.length > 1
-      ? customPool.filter(q => !currentQ ||
-          !(q.a === currentQ.a && q.b === currentQ.b &&
-            variantToDisplay(q).mode === currentQ.chosenMode))
+      ? customPool.filter(q => {
+          if (!currentQ) return true;
+          const disp = variantToDisplay(q);
+          return !(disp.a === currentQ.a && disp.b === currentQ.b && disp.mode === currentQ.chosenMode);
+        })
       : customPool;
     const pick = pool[Math.floor(Math.random() * pool.length)] || customPool[0];
     const disp = variantToDisplay(pick);
