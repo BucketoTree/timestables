@@ -1778,6 +1778,11 @@ function endSession() {
 
   sessionStart = null;
   document.querySelectorAll('.input-wrap').forEach(w => w.style.setProperty('--progress', '0%'));
+  // Reset the dot plot to its time view for each new session-end stats screen.
+  // The first press of Enter / New Session animates it into the distribution;
+  // the second press dismisses the screen.
+  dotPlotAnimT = 0;
+  if (dotPlotAnimReq) { cancelAnimationFrame(dotPlotAnimReq); dotPlotAnimReq = null; }
   show('stats');
   requestAnimationFrame(() => {
     document.getElementById('stats').classList.add('visible');
@@ -1791,6 +1796,17 @@ function statsEnterListener(e) {
 }
 
 function newGame() {
+  // Two-step exit from the stats screen:
+  //   1) If we're still in time view (dotPlotAnimT < 1), trigger the
+  //      distribution animation and return — don't dismiss the screen yet.
+  //   2) Once dots have collapsed into the distribution, the next press
+  //      actually exits.
+  // Animation in progress also counts as "step 1 already underway", so
+  // hammering Enter doesn't skip the animation.
+  if (dotPlotState && (dotPlotAnimT < 1 || dotPlotAnimReq)) {
+    if (!dotPlotAnimReq) animateDotPlot(1);
+    return;
+  }
   document.removeEventListener('keydown', statsEnterListener);
   const statsEl = document.getElementById('stats');
   statsEl.classList.remove('visible');
@@ -1798,6 +1814,33 @@ function newGame() {
 }
 
 // ── STATS CHART ──────────────────────────────────────────────
+// Layout state for the post-session dot plot. Populated once per session by
+// drawChart(); renderDotPlot() reads it on every animation frame.
+let dotPlotState = null;
+let dotPlotAnimT = 0;          // 0 = time view, 1 = distribution view
+let dotPlotAnimReq = null;
+
+function animateDotPlot(targetT) {
+  if (!dotPlotState) return;
+  if (dotPlotAnimReq) cancelAnimationFrame(dotPlotAnimReq);
+  const startT = dotPlotAnimT;
+  const startTime = performance.now();
+  const duration = 650;  // ms
+  // Cubic ease-in-out
+  const ease = (u) => u < 0.5 ? 4*u*u*u : 1 - Math.pow(-2*u + 2, 3) / 2;
+  const step = (now) => {
+    const u = Math.min(1, (now - startTime) / duration);
+    dotPlotAnimT = startT + (targetT - startT) * ease(u);
+    renderDotPlot(dotPlotAnimT);
+    if (u < 1) {
+      dotPlotAnimReq = requestAnimationFrame(step);
+    } else {
+      dotPlotAnimReq = null;
+    }
+  };
+  dotPlotAnimReq = requestAnimationFrame(step);
+}
+
 function drawChart() {
   const dotsCanvas = document.getElementById('statsDots');
   const dotsWrap = dotsCanvas.parentElement;
@@ -1816,7 +1859,7 @@ function drawChart() {
   const ctx = sizeCanvas(dotsCanvas, dotsWrap);
   const W = dotsWrap.clientWidth, H = dotsWrap.clientHeight;
 
-  if (sessionLog.length === 0) return;
+  if (sessionLog.length === 0) { dotPlotState = null; return; }
 
   // For each question: per-question seconds and the elapsed time at submit
   // (cumulative sum). Time axis is "seconds since session start" — same as
@@ -1840,11 +1883,13 @@ function drawChart() {
   const yMax = Math.max(maxSec * 1.15, 1);
   const yRange = yMax - yMin;
 
-  // Color scale — uses the *lifetime* scale (same as the heatmap's ALL view)
-  // so colors mean the same thing across sessions: a session where every
-  // question was slow shows mostly red, not "red relative to the session".
-  // If there's no history yet (very first session), fall back to session-local
-  // 5/95 percentiles so the colors still convey relative speed.
+  // Color scale — uses the baseline-driven scale (lime = your recent fastest,
+  // red = 4× that) so colors mean the same thing across sessions: a session
+  // where every question was slow shows mostly red, not just "red relative
+  // to this session."
+  // First-session fallback: no attempt history exists yet, so derive a local
+  // baseline from this session's fastest times the same way (fastest 10,
+  // median). Same shape, same multiplier — just session-local.
   const sortedSecs = [...secs].sort((a, b) => a - b);
   const lifetime = lifetimeScale();
   let dotLo, dotHi;
@@ -1852,16 +1897,98 @@ function drawChart() {
     dotLo = lifetime.lo;
     dotHi = lifetime.hi;
   } else {
-    dotLo = sortedSecs[Math.floor(sortedSecs.length * 0.05)] ?? sortedSecs[0];
-    dotHi = sortedSecs[Math.floor(sortedSecs.length * 0.95)] ?? sortedSecs[sortedSecs.length - 1];
+    const fastest = sortedSecs.slice(0, Math.min(10, sortedSecs.length));
+    const mid = Math.floor(fastest.length / 2);
+    const baseline = fastest.length % 2 === 1
+      ? fastest[mid]
+      : (fastest[mid - 1] + fastest[mid]) / 2;
+    dotLo = baseline;
+    dotHi = baseline * BASELINE_RED_MULT;
   }
 
   const xPos = t => pad.left + (totalElapsed > 0 ? (t / totalElapsed) : 0) * plotW;
   const yPos = s => pad.top + plotH - ((s - yMin) / yRange) * plotH;
 
-  // Gridlines + Y-axis numeric labels on the left
+  // ─── TIME VIEW POSITIONS ─────────────────────────────────────
+  // The original "elapsed time × solve seconds" scatter.
+  const timePositions = sessionLog.map((_, i) => ({
+    x: xPos(elapsedAt[i]),
+    y: yPos(secs[i]),
+  }));
+
+  // ─── DISTRIBUTION VIEW POSITIONS ─────────────────────────────
+  // Bin by Y (solve seconds), then stack dots horizontally from the left.
+  // Bin height = dot diameter so adjacent rows don't overlap; same for the
+  // horizontal spacing of stacked dots in a bin.
+  const DOT_R = 3.5;
+  const SPACING = DOT_R * 2 + 1;     // a tiny gap so dots don't visually merge
+  const numBins = Math.max(1, Math.floor(plotH / SPACING));
+  const binStep = plotH / numBins;   // Y span (px) per bin
+  // Each dot's bin index from its Y position. The bin's center Y is what we
+  // place the dot at, so stacks within a bin sit on a clean horizontal line.
+  const binIndexFor = (y) => {
+    // y is in plot coords; convert to "row from top" 0..numBins-1
+    const rel = (y - pad.top) / plotH;
+    return Math.max(0, Math.min(numBins - 1, Math.floor(rel * numBins)));
+  };
+  // First, assign every dot to its bin (preserving original index for color/id)
+  const binSlots = Array.from({ length: numBins }, () => []);
+  for (let i = 0; i < sessionLog.length; i++) {
+    binSlots[binIndexFor(timePositions[i].y)].push(i);
+  }
+  // Within each bin, stacking order = original index (== chronological).
+  // Compute distribution position for each dot.
+  const distPositions = new Array(sessionLog.length);
+  // Leftmost dot center — pushed in a bit from the axis so the distribution
+  // doesn't crowd the Y-axis labels.
+  const xStart = pad.left + SPACING * 2;
+  for (let b = 0; b < numBins; b++) {
+    const slot = binSlots[b];
+    const binCenterY = pad.top + (b + 0.5) * binStep;
+    for (let k = 0; k < slot.length; k++) {
+      distPositions[slot[k]] = {
+        x: xStart + k * SPACING,
+        y: binCenterY,
+      };
+    }
+  }
+
+  // Maximum stack length, used for the distribution view's X-axis ticks
+  const maxStackLen = binSlots.reduce((m, s) => Math.max(m, s.length), 0);
+
+  // Cache everything renderDotPlot needs.
+  dotPlotState = {
+    ctx, W, H, pad, plotW, plotH,
+    secs, elapsedAt, totalElapsed,
+    yMin, yMax, yRange,
+    dotLo, dotHi,
+    xPos, yPos,
+    timePositions, distPositions,
+    maxStackLen,
+    DOT_R, SPACING,
+  };
+
+  // Initial render at the current view's t value (allows the view toggle to
+  // persist across re-renders if we ever support that).
+  renderDotPlot(dotPlotAnimT);
+  attachDotPlotTooltip();
+}
+
+function renderDotPlot(animT) {
+  const S = dotPlotState;
+  if (!S) return;
+  const { ctx, W, H, pad, plotW, plotH,
+          secs, totalElapsed, yMin, yMax, yRange,
+          dotLo, dotHi, xPos, yPos,
+          timePositions, distPositions,
+          maxStackLen, DOT_R } = S;
+
+  // Clear
+  ctx.clearRect(0, 0, W, H);
+
+  // ─── GRIDLINES + Y AXIS (always shown, identical in both views) ───
   ctx.font = `10px 'DM Mono', monospace`;
-  const ticks = 4;
+  const ticks = 9;
   for (let i = 0; i <= ticks; i++) {
     const y = pad.top + (plotH / ticks) * i;
     ctx.strokeStyle = 'rgba(255,255,255,0.04)';
@@ -1869,14 +1996,13 @@ function drawChart() {
     ctx.moveTo(pad.left, y);
     ctx.lineTo(pad.left + plotW, y);
     ctx.stroke();
-
     const secVal = yMax - (yRange / ticks) * i;
     ctx.fillStyle = 'rgba(200,240,58,0.55)';
     ctx.textAlign = 'right';
     ctx.fillText(secVal.toFixed(1), pad.left - 6, y + 3);
   }
 
-  // Y-axis label (rotated) on the far left
+  // Y-axis label (rotated)
   ctx.save();
   ctx.font = `9px 'DM Mono', monospace`;
   ctx.fillStyle = 'rgba(200,240,58,0.55)';
@@ -1886,12 +2012,7 @@ function drawChart() {
   ctx.fillText('SECONDS', 0, 0);
   ctx.restore();
 
-  // Vertical gradient bar on the right, spanning the full plot height.
-  // The middle portion (dotLo→dotHi) shows the full lime→red gradient — that's
-  // the active color-mapping zone. Above dotHi, the bar continues solid red;
-  // below dotLo, solid lime. This matches how dots are actually colored
-  // (clamped at both ends), so a dot's color always corresponds to the bar's
-  // color at the same Y position.
+  // ─── GRADIENT BAR (right side, always shown) ──────────────────
   const barW = 6;
   const barX = pad.left + plotW + 12;
   const barTopY = pad.top;
@@ -1899,8 +2020,6 @@ function drawChart() {
   const gradTopY = Math.max(barTopY, Math.min(barBotY, yPos(dotHi)));
   const gradBotY = Math.max(barTopY, Math.min(barBotY, yPos(dotLo)));
 
-  // Clip to a rounded rectangle so the fills get clean rounded ends without
-  // having to manually mask corners.
   ctx.save();
   const r = barW / 2;
   ctx.beginPath();
@@ -1911,12 +2030,10 @@ function drawChart() {
   ctx.closePath();
   ctx.clip();
 
-  // Solid red cap above the gradient (values ≥ dotHi)
   if (gradTopY > barTopY) {
     ctx.fillStyle = '#ff4d6d';
     ctx.fillRect(barX, barTopY, barW, gradTopY - barTopY);
   }
-  // The actual gradient from dotHi (red) down to dotLo (lime)
   if (gradBotY > gradTopY) {
     const grad = ctx.createLinearGradient(0, gradTopY, 0, gradBotY);
     grad.addColorStop(0,    '#ff4d6d');
@@ -1926,14 +2043,12 @@ function drawChart() {
     ctx.fillStyle = grad;
     ctx.fillRect(barX, gradTopY, barW, gradBotY - gradTopY);
   }
-  // Solid lime tail below the gradient (values ≤ dotLo)
   if (barBotY > gradBotY) {
     ctx.fillStyle = '#c8f03a';
     ctx.fillRect(barX, gradBotY, barW, barBotY - gradBotY);
   }
   ctx.restore();
 
-  // Labels at the gradient transition points — right of the bar
   ctx.font = `10px 'DM Mono', monospace`;
   ctx.fillStyle = 'rgba(200,240,58,0.65)';
   ctx.textAlign = 'left';
@@ -1942,90 +2057,37 @@ function drawChart() {
   ctx.fillText(`≤${dotLo.toFixed(1)}s`, barX + barW + 4, gradBotY);
   ctx.textBaseline = 'alphabetic';
 
-  // X-axis ticks at sensible intervals
+  // ─── X-AXIS LABELS (time only — fades out as the dots flow into the histogram) ───
   ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.3)';
   ctx.font = `9px 'DM Mono', monospace`;
-  const tickCandidates = [5, 10, 15, 30, 60, 120, 300, 600];
-  const tickInterval = tickCandidates.find(t => totalElapsed / t <= 8) || tickCandidates[tickCandidates.length - 1];
-  for (let t = 0; t <= totalElapsed; t += tickInterval) {
-    ctx.fillText(t + 's', xPos(t), H - pad.bottom + 14);
-  }
-  if (totalElapsed % tickInterval > tickInterval * 0.3) {
-    ctx.fillText(Math.round(totalElapsed) + 's', xPos(totalElapsed), H - pad.bottom + 14);
+  const timeAlpha = 1 - animT;
+  if (timeAlpha > 0.01) {
+    ctx.fillStyle = `rgba(255,255,255,${0.3 * timeAlpha})`;
+    const tickCandidates = [5, 10, 15, 30, 60, 120, 300, 600];
+    const tickInterval = tickCandidates.find(t => totalElapsed / t <= 8) || tickCandidates[tickCandidates.length - 1];
+    for (let t = 0; t <= totalElapsed; t += tickInterval) {
+      ctx.fillText(t + 's', xPos(t), H - pad.bottom + 14);
+    }
+    if (totalElapsed % tickInterval > tickInterval * 0.3) {
+      ctx.fillText(Math.round(totalElapsed) + 's', xPos(totalElapsed), H - pad.bottom + 14);
+    }
   }
 
-  // Dots — each question colored by its solve time using the heatmap gradient.
-  // Outliers (≥ dotHi, the red end of the gradient) get a small label so you
-  // can see which questions tripped you up. Skip labelling if the whole session
-  // sits within a narrow band — there's no meaningful outlier to flag.
-  // (This is a session-internal check; the dot threshold uses the global
-  // dotHi so colors and labels match the heatmap scale.)
-  const sessionMedian = sortedSecs[Math.floor(sortedSecs.length / 2)];
-  const sessionP90 = sortedSecs[Math.floor(sortedSecs.length * 0.9)];
-  const labelOutliers = sessionLog.length >= 4 && sessionP90 >= sessionMedian * 1.5;
-
-  // Pass 1: draw all dots first so labels render on top
+  // ─── DOTS (interpolated between layouts) ──────────────────────
+  // Update hit-test cache with current positions, so the tooltip works at any
+  // animation frame.
+  dotPlotHitData = { canvas: document.getElementById('statsDots'), dots: [] };
   for (let i = 0; i < sessionLog.length; i++) {
-    const t = elapsedAt[i];
+    const tp = timePositions[i];
+    const dp = distPositions[i];
+    const x = tp.x + (dp.x - tp.x) * animT;
+    const y = tp.y + (dp.y - tp.y) * animT;
     const s = secs[i];
     ctx.beginPath();
-    ctx.arc(xPos(t), yPos(s), 3.5, 0, Math.PI * 2);
+    ctx.arc(x, y, DOT_R, 0, Math.PI * 2);
     ctx.fillStyle = colorFor({ avg: s }, dotLo, dotHi);
     ctx.fill();
-  }
-
-  // Pass 2: outlier labels
-  if (labelOutliers) {
-    ctx.font = `10px 'DM Mono', monospace`;
-    ctx.textBaseline = 'middle';
-    const labelPad = 7;          // distance from dot to label
-    const rightEdge = pad.left + plotW;
-
-    // Build label data, then sort by x to do simple overlap avoidance later
-    const labels = [];
-    for (let i = 0; i < sessionLog.length; i++) {
-      const s = secs[i];
-      if (s < dotHi) continue;
-      const q = sessionLog[i];
-      const text = q.chosenMode === 'factors'
-        ? `${q.a}×?=${q.a * q.b}`
-        : `${q.a}×${q.b}`;
-      const x = xPos(elapsedAt[i]);
-      const y = yPos(s);
-      const tw = ctx.measureText(text).width;
-      // Flip left if too close to the right edge
-      const flipLeft = (x + labelPad + tw + 4) > rightEdge;
-      labels.push({ x, y, text, tw, flipLeft });
-    }
-
-    // Light overlap avoidance: if two labels are within 14px vertically AND
-    // their text would horizontally collide, nudge the later one down 12px.
-    // Same-axis ordering keeps it predictable.
-    labels.sort((a, b) => a.x - b.x);
-    for (let i = 1; i < labels.length; i++) {
-      const cur = labels[i];
-      const prev = labels[i - 1];
-      const prevR = prev.flipLeft ? prev.x - labelPad : prev.x + labelPad + prev.tw;
-      const prevL = prev.flipLeft ? prev.x - labelPad - prev.tw : prev.x + labelPad;
-      const curL  = cur.flipLeft  ? cur.x  - labelPad - cur.tw  : cur.x  + labelPad;
-      const curR  = cur.flipLeft  ? cur.x  - labelPad           : cur.x  + labelPad + cur.tw;
-      const xOverlap = !(curR < prevL || curL > prevR);
-      if (xOverlap && Math.abs(cur.y - prev.y) < 14) {
-        cur.y = prev.y + 14;
-      }
-    }
-
-    for (const lbl of labels) {
-      ctx.fillStyle = 'rgba(232,232,240,0.85)';
-      if (lbl.flipLeft) {
-        ctx.textAlign = 'right';
-        ctx.fillText(lbl.text, lbl.x - labelPad, lbl.y);
-      } else {
-        ctx.textAlign = 'left';
-        ctx.fillText(lbl.text, lbl.x + labelPad, lbl.y);
-      }
-    }
+    dotPlotHitData.dots.push({ x, y, idx: i });
   }
 }
 
@@ -2127,29 +2189,40 @@ function statsForPrefix(prefix, windowN) {
   return out;
 }
 
-// Compute the gradient's [lo, hi] from a flat array of avg times.
-// Uses 5th/95th percentile clipping so a few outliers don't squash the
-// gradient. Returns null if the array is empty.
-function computeScale(avgs) {
-  if (!avgs || avgs.length === 0) return null;
-  const sorted = [...avgs].sort((a, b) => a - b);
-  return {
-    lo: sorted[Math.floor(sorted.length * 0.05)] || sorted[0],
-    hi: sorted[Math.floor(sorted.length * 0.95)] || sorted[sorted.length - 1],
-  };
+// The gradient's red anchor is this multiple of the baseline. 1× = full lime,
+// 4× = full red, everything in between interpolates. Tunable.
+const BASELINE_RED_MULT = 4;
+
+// Compute the "recent best" baseline across all your variants.
+//   - For each variant with attempt history, take the avg time across its
+//     last 10 attempts (its recent average).
+//   - From those per-variant recent avgs, keep the fastest 10.
+//   - Median those = the baseline.
+// This means the lime end of the gradient tracks how fast you actually are
+// right now: as you improve, baseline drops and your old "fast" times start
+// looking less green. Returns null if no variants have any data yet.
+function computeBaseline() {
+  const recentAvgs = [];
+  for (const k in attemptsByPair) {
+    const s = pairStatsFromAttempts(k, 10);
+    if (s && s.avg != null) recentAvgs.push(s.avg);
+  }
+  if (recentAvgs.length === 0) return null;
+  recentAvgs.sort((a, b) => a - b);
+  const fastest = recentAvgs.slice(0, Math.min(10, recentAvgs.length));
+  const mid = Math.floor(fastest.length / 2);
+  // Median: middle element for odd-length, avg of middle two for even-length.
+  if (fastest.length % 2 === 1) return fastest[mid];
+  return (fastest[mid - 1] + fastest[mid]) / 2;
 }
 
-// Lifetime scale across all stored variants — the "global" gradient endpoints.
-// Used by both the heatmap (when window=ALL) and the post-session dot plot, so
-// colors are consistent across sessions: a slow session looks slow, not just
-// "slow relative to itself". Returns null if no data exists yet.
+// The gradient's [lo, hi] endpoints — lo = your baseline, hi = baseline × N.
+// Everything at or below lo renders full lime; everything at or above hi
+// renders full red. Returns null if no history exists yet.
 function lifetimeScale() {
-  const avgs = [];
-  for (const k in srCards) {
-    const s = pairStatsLifetime(k);
-    if (s && s.avg != null) avgs.push(s.avg);
-  }
-  return computeScale(avgs);
+  const baseline = computeBaseline();
+  if (baseline == null) return null;
+  return { lo: baseline, hi: baseline * BASELINE_RED_MULT };
 }
 
 // Lime → yellow → orange → red gradient, scaled by [lo, hi]
@@ -2190,7 +2263,10 @@ function renderHeatmap() {
   }
   empty.style.display = 'none';
 
-  // Shared color scale across all three datasets — same color = same speed
+  // Shared color scale across all three datasets — same color = same speed.
+  // Uses the baseline-driven scale (recent fastest 10 across all variants,
+  // median) so colors mean "how fast vs. your current best", not "how fast
+  // vs. the rest of this view." A uniformly-fast session shows all green.
   const allAvgs = [...dataN.values(), ...dataFR.values(), ...dataFC.values()]
     .filter(d => d.avg != null).map(d => d.avg);
   if (allAvgs.length === 0) {
@@ -2198,7 +2274,7 @@ function renderHeatmap() {
     empty.style.display = '';
     return;
   }
-  const scale = computeScale(allAvgs);
+  const scale = lifetimeScale();
   const lo = scale.lo, hi = scale.hi;
 
   // Cache for the custom-mode slider, which maps its 0–100 positions to this
@@ -2295,12 +2371,76 @@ function renderHeatmap() {
 
 // Fast custom tooltip — appears instantly on hover, no browser delay.
 let hmTooltipEl = null;
-function attachHeatmapTooltip(grid) {
+
+// Hit-test cache for the post-session dot plot. Populated by drawChart so the
+// canvas hover handler can find the closest dot without recomputing layout.
+let dotPlotHitData = null;
+
+function ensureTooltipEl() {
   if (!hmTooltipEl) {
     hmTooltipEl = document.createElement('div');
     hmTooltipEl.id = 'heatmapTip';
     document.body.appendChild(hmTooltipEl);
   }
+  return hmTooltipEl;
+}
+
+// Wire up hover-for-tooltip on the post-session dot plot canvas. Each dot's
+// position was cached in dotPlotHitData when drawChart ran; we find the
+// nearest dot within a hover radius and show the question + solve time.
+function attachDotPlotTooltip() {
+  const canvas = document.getElementById('statsDots');
+  if (!canvas) return;
+  const tip = ensureTooltipEl();
+
+  canvas.onmousemove = (e) => {
+    if (!dotPlotHitData || dotPlotHitData.dots.length === 0) {
+      tip.style.display = 'none';
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    // Find nearest dot
+    let best = null, bestD2 = Infinity;
+    for (const d of dotPlotHitData.dots) {
+      const dx = d.x - mx, dy = d.y - my;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD2) { bestD2 = d2; best = d; }
+    }
+    // Hover radius — a bit larger than the dot itself so it's easy to hit
+    const HOVER_RADIUS = 10;
+    if (!best || bestD2 > HOVER_RADIUS * HOVER_RADIUS) {
+      tip.style.display = 'none';
+      return;
+    }
+    const q = sessionLog[best.idx];
+    if (!q) { tip.style.display = 'none'; return; }
+    const label = q.chosenMode === 'factors'
+      ? `${q.a} × ? = ${q.a * q.b}`
+      : `${q.a} × ${q.b}`;
+    const time = `${q.seconds.toFixed(2)}s`;
+    const attemptNote = q.attempts > 1
+      ? ` <span style="opacity:0.55;">· ${q.attempts} tries</span>`
+      : '';
+    tip.innerHTML = `<div class="tip-row">${label}&nbsp;&nbsp;<span class="tip-stats">${time}</span>${attemptNote}</div>`;
+    tip.style.display = 'block';
+    // Position above cursor; flip below if too close to top
+    const pad = 12;
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let x = e.clientX - tw / 2;
+    let y = e.clientY - th - pad;
+    if (y < 4) y = e.clientY + pad;
+    x = Math.max(4, Math.min(window.innerWidth - tw - 4, x));
+    tip.style.left = x + 'px';
+    tip.style.top  = y + 'px';
+  };
+  canvas.onmouseleave = () => { tip.style.display = 'none'; };
+}
+
+function attachHeatmapTooltip(grid) {
+  const tip = ensureTooltipEl();
   // Use a single delegated listener on the grid — cheaper than 210 per-cell listeners
   grid.onmousemove = (e) => {
     const cell = e.target.closest('.heatmap-cell.has-data');
