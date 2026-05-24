@@ -647,7 +647,7 @@ body.custom-active #factorProduct {
           <div id="sliderThumbMax" class="slider-thumb" style="display:none;left:100%;"></div>
         </div>
         <span id="heatmapScaleHi">—</span>
-        <span id="customPoolInfo" style="display:none;color:var(--accent);opacity:0.95;letter-spacing:2px;min-width:96px;text-align:right;font-size:13px;">POOL: 0</span>
+        <span id="customPoolInfo" style="display:none;color:var(--accent);opacity:0.95;letter-spacing:2px;min-width:130px;text-align:right;font-size:13px;">POOL: 0</span>
       </div>
       <div id="heatmapEmpty" style="display:none;text-align:center;padding:40px 20px;opacity:0.4;font-size:11px;letter-spacing:2px;">NO DATA YET — PLAY A SESSION</div>
     </div>
@@ -672,21 +672,9 @@ body.custom-active #factorProduct {
         style="width:180px;text-align:center;background:transparent;">
     </div>
   </div>
-  <!-- Factors mode: known × [input] = product -->
-  <div id="rowFactors" style="display:none;align-items:center;justify-content:center;gap:0;position:relative;z-index:2;">
-    <span class="axis-btn" id="factorKnown" style="cursor:pointer;" onclick="selectAxis('a')" oncontextmenu="soloAxis('a');return false;"></span>
-    <span class="axis-x">×</span>
-    <div class="input-wrap">
-      <span class="blink-q" id="blinkQF">?</span>
-      <input class="answer-input" id="setupAnswerInputF" type="number" placeholder=""
-        autocomplete="off" oninput="setupAnswerTypedF()" onkeydown="setupAnswerKey(event)"
-        onfocus="document.getElementById('blinkQF').classList.add('active')"
-        onblur="document.getElementById('blinkQF').classList.remove('active')"
-        style="width:180px;text-align:center;background:transparent;">
-    </div>
-    <span class="axis-x">=</span>
-    <span class="axis-btn" id="factorProduct" style="cursor:pointer;" onclick="selectAxis('b')" oncontextmenu="soloAxis('b');return false;"></span>
-  </div>
+  <!-- Inline hint shown when a start attempt is blocked (e.g. custom pool too small).
+       Hidden by default; populated and faded by showStartHint(). -->
+  <div id="startHint" style="position:relative;z-index:2;margin-top:24px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:3px;color:var(--accent2);opacity:0;transition:opacity 0.25s;pointer-events:none;text-align:center;text-transform:uppercase;"></div>
 </div>
 
 <!-- Pause overlay -->
@@ -1597,8 +1585,22 @@ function updatePoolPreview() {
   // green once you've got enough.
   const info = document.getElementById('customPoolInfo');
   if (info) {
-    info.textContent = `POOL: ${customPool.length}`;
-    info.style.color = customPool.length >= 10 ? 'var(--accent)' : 'var(--accent2)';
+    // When under the 10-variant minimum, show "POOL: 7 / 10" so the missing
+    // count is visible inline. Above the threshold, drop the "/ 10" since
+    // there's no longer a goal to hit.
+    if (customPool.length < 10) {
+      info.textContent = `POOL: ${customPool.length} / 10`;
+      info.style.color = 'var(--accent2)';
+    } else {
+      info.textContent = `POOL: ${customPool.length}`;
+      info.style.color = 'var(--accent)';
+      // If a "need N more" hint was up, hide it — the constraint is now met.
+      const hintEl = document.getElementById('startHint');
+      if (hintEl && hintEl.style.opacity !== '0') {
+        hintEl.style.opacity = '0';
+        if (startHintTimer) { clearTimeout(startHintTimer); startHintTimer = null; }
+      }
+    }
   }
   // Preview: keep the previously-chosen entry if it's still in the pool, so
   // dragging the slider doesn't make the preview number flicker. Pick a new
@@ -1667,6 +1669,33 @@ function variantToDisplay(q) {
 
 
 // ── SETUP / IN-GAME ANSWER HANDLERS ──────────────────────────
+// In custom mode the pool must hold at least 10 distinct variants before a
+// session can start — fewer than that means the session-end commit check
+// (SESSION_PAIR_THRESHOLD) would discard the attempts, so the heatmap and
+// stats wouldn't reflect the practice. Better to block the start outright.
+function canStartGame() {
+  if (customMode && customPool.length < 10) {
+    showStartHint(`Need ${10 - customPool.length} more in pool`);
+    return false;
+  }
+  return true;
+}
+
+// Briefly show a hint below the question. Auto-fades after a couple seconds.
+// Re-calling resets the timer so repeated blocked attempts keep the hint up.
+let startHintTimer = null;
+function showStartHint(text) {
+  const el = document.getElementById('startHint');
+  if (!el) return;
+  el.textContent = text;
+  el.style.opacity = '1';
+  if (startHintTimer) clearTimeout(startHintTimer);
+  startHintTimer = setTimeout(() => {
+    el.style.opacity = '0';
+    startHintTimer = null;
+  }, 2500);
+}
+
 function setupAnswerTyped() {
   const bq = document.getElementById('blinkQ');
   if (bq) bq.style.visibility = document.getElementById('setupAnswerInput').value ? 'hidden' : '';
@@ -1679,6 +1708,7 @@ function setupAnswerTyped() {
   if (isNaN(a) || isNaN(b)) return;
   const correct = a * b;
   if (val === correct && input.value.length === correct.toString().length) {
+    if (!canStartGame()) { input.value = ''; return; }
     input.value = '';
     startGame();
   }
@@ -1697,6 +1727,7 @@ function setupAnswerTypedF() {
   const known = fk ? parseInt(fk.textContent) : 1;
   const correct = product / known;
   if (val === correct && input.value.length === correct.toString().length) {
+    if (!canStartGame()) { input.value = ''; return; }
     input.value = '';
     startGame();
   }
