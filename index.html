@@ -672,6 +672,21 @@ body.custom-active #factorProduct {
         style="width:180px;text-align:center;background:transparent;">
     </div>
   </div>
+  <!-- Factors mode: known × [input] = product -->
+  <div id="rowFactors" style="display:none;align-items:center;justify-content:center;gap:0;position:relative;z-index:2;">
+    <span class="axis-btn" id="factorKnown" style="cursor:pointer;" onclick="selectAxis('a')" oncontextmenu="soloAxis('a');return false;"></span>
+    <span class="axis-x">×</span>
+    <div class="input-wrap">
+      <span class="blink-q" id="blinkQF">?</span>
+      <input class="answer-input" id="setupAnswerInputF" type="number" placeholder=""
+        autocomplete="off" oninput="setupAnswerTypedF()" onkeydown="setupAnswerKey(event)"
+        onfocus="document.getElementById('blinkQF').classList.add('active')"
+        onblur="document.getElementById('blinkQF').classList.remove('active')"
+        style="width:180px;text-align:center;background:transparent;">
+    </div>
+    <span class="axis-x">=</span>
+    <span class="axis-btn" id="factorProduct" style="cursor:pointer;" onclick="selectAxis('b')" oncontextmenu="soloAxis('b');return false;"></span>
+  </div>
   <!-- Inline hint shown when a start attempt is blocked (e.g. custom pool too small).
        Hidden by default; populated and faded by showStartHint(). -->
   <div id="startHint" style="position:relative;z-index:2;margin-top:24px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:3px;color:var(--accent2);opacity:0;transition:opacity 0.25s;pointer-events:none;text-align:center;text-transform:uppercase;"></div>
@@ -1344,6 +1359,14 @@ function startGame() {
   sessionLog = [];
   sessionAttemptsBuffer = {};
   sessionStart = Date.now();
+  // In custom mode, seed currentQ from the preview question that was just
+  // answered to start the game. Without this, pickQuestion's "skip the last
+  // question" filter has nothing to compare against and might immediately
+  // pick the same one again — which is jarring right after answering it.
+  if (customMode && customPreviewQ) {
+    const disp = variantToDisplay(customPreviewQ);
+    currentQ = { a: disp.a, b: disp.b, chosenMode: disp.mode, hideSide: disp.hideSide };
+  }
   nextQuestion();
   // currentQ.chosenMode is set by nextQuestion → use it to pick the input.
   const useFactorInput = currentQ && currentQ.chosenMode === 'factors';
@@ -2162,6 +2185,16 @@ function toggleStats() {
     renderHeatmap();
   } else {
     el.style.display = 'none';
+    // If we're closing the overlay while custom mode is active, the user is
+    // ready to start the session — refocus the input that matches whichever
+    // preview row is showing. Without this, focus is lost (it was on the X
+    // button or backdrop) and the user's keystrokes go nowhere.
+    if (customMode) {
+      const rowF = document.getElementById('rowFactors');
+      const factorRowVisible = rowF && rowF.style.display !== 'none';
+      const inp = document.getElementById(factorRowVisible ? 'setupAnswerInputF' : 'setupAnswerInput');
+      if (inp) inp.focus();
+    }
   }
 }
 
@@ -2310,7 +2343,20 @@ function renderHeatmap() {
     empty.style.display = '';
     return;
   }
-  const scale = lifetimeScale();
+  let scale = lifetimeScale();
+  // Fallback: lifetimeScale() pulls from recent attempts, which may be empty
+  // even when the heatmap has data to draw (e.g., legacy srCards from before
+  // the attempts log existed, or the ALL window showing card-level lifetime
+  // stats). In that case, derive a baseline from whatever's visible right now.
+  if (!scale) {
+    const sortedAvgs = [...allAvgs].sort((a, b) => a - b);
+    const fastest = sortedAvgs.slice(0, Math.min(10, sortedAvgs.length));
+    const mid = Math.floor(fastest.length / 2);
+    const baseline = fastest.length % 2 === 1
+      ? fastest[mid]
+      : (fastest[mid - 1] + fastest[mid]) / 2;
+    scale = { lo: baseline, hi: baseline * BASELINE_RED_MULT };
+  }
   const lo = scale.lo, hi = scale.hi;
 
   // Cache for the custom-mode slider, which maps its 0–100 positions to this
