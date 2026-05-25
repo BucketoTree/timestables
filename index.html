@@ -1046,13 +1046,19 @@ function retroactiveUpdate() {
 }
 
 // ── WEIGHTED QUESTION PICKER ─────────────────────────────────
-// "Unseen" = no card yet, or the card has zero committed attempts. Brand-new
+// "Unseen" = no lifetime attempts AND not yet attempted this session. Brand-new
 // variants get prioritized before any repeats — gives breadth-first coverage
-// of whatever set the user is practicing, and avoids drilling the same few
-// questions while others sit untouched.
+// of whatever set the user is practicing. Crucially, the session-attempt
+// check prevents the picker from cycling through the same handful of
+// genuinely-unseen variants within one session (lifeN only updates at session
+// commit, so without the in-session check, recently-attempted "unseen"
+// variants would still look unseen and dominate the picks).
 function isUnseenVariant(a, b, mode) {
-  const card = srCards[srKey(a, b, mode)];
-  return !card || !card.lifeN;
+  const k = srKey(a, b, mode);
+  const card = srCards[k];
+  if (card && card.lifeN) return false;
+  if (sessionAttemptsBuffer[k] && sessionAttemptsBuffer[k].length > 0) return false;
+  return true;
 }
 
 function pickQuestion() {
@@ -1071,16 +1077,16 @@ function pickQuestion() {
       : customPool;
     // Prioritize variants with no recorded attempts — every entry in the
     // pool deserves at least one appearance before any repeats happen.
+    // Both lifetime and within-session attempts count as "seen", so the
+    // picker doesn't cycle through the same handful of unseen pool entries.
     const unseen = pool.filter(q => {
-      const mode = q.variant === 'n' ? 'normal' : 'factors';
-      // For custom-pool factor variants, the srKey lookup needs the canonical
-      // (a, b) form which is what's stored in q (pool entries preserve a<=b).
-      // But isUnseenVariant calls srKey() internally, so passing the swapped
-      // fc-variant a/b would give the wrong key. Easier: call srCards directly
-      // with the canonical srKey assembly.
+      // Pool entries store canonical (a, b) — assemble the srKey directly.
       const prefix = q.variant === 'n' ? 'n:' : (q.variant === 'fr' ? 'fr:' : 'fc:');
-      const card = srCards[`${prefix}${q.a},${q.b}`];
-      return !card || !card.lifeN;
+      const k = `${prefix}${q.a},${q.b}`;
+      const card = srCards[k];
+      if (card && card.lifeN) return false;
+      if (sessionAttemptsBuffer[k] && sessionAttemptsBuffer[k].length > 0) return false;
+      return true;
     });
     const candidates = unseen.length > 0 ? unseen : pool;
     const pick = candidates[Math.floor(Math.random() * candidates.length)] || customPool[0];
@@ -1109,6 +1115,19 @@ function pickQuestion() {
       weight += Math.max(0, card.lastTimeRatio - 1) * 3;
     }
     if (card.lastAttempts > 1) weight += (card.lastAttempts - 1) * 2;
+    // Suppress variants already attempted this session — favors breadth.
+    // Each in-session repeat multiplies the weight by 0.25, so a variant
+    // that's already appeared once is 4x less likely to come up again than
+    // one that hasn't (all else equal). After two appearances, 16x less.
+    // Spaced repetition still applies: a hard variant might still beat an
+    // easy unseen one, but the bias tilts toward not seeing the same
+    // question 3-4 times in a 25-question session.
+    const k = srKey(a, b, mode);
+    const sessionAppearances = sessionAttemptsBuffer[k]
+      ? sessionAttemptsBuffer[k].length : 0;
+    if (sessionAppearances > 0) {
+      weight *= Math.pow(0.25, sessionAppearances);
+    }
     candidates.push({ a, b, mode, weight });
   }
 
@@ -1962,7 +1981,7 @@ function drawChart() {
   }
   const totalElapsed = elapsedAt[elapsedAt.length - 1];
 
-  const pad = { top: 16, right: 60, bottom: 32, left: 60 };
+  const pad = { top: 16, right: 20, bottom: 32, left: 60 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top  - pad.bottom;
 
@@ -2089,22 +2108,28 @@ function renderDotPlot(animT) {
     const secVal = yMax - (yRange / ticks) * i;
     ctx.fillStyle = 'rgba(200,240,58,0.55)';
     ctx.textAlign = 'right';
-    ctx.fillText(secVal.toFixed(1), pad.left - 6, y + 3);
+    // Labels sit left of the gradient bar (which occupies pad.left-8 .. pad.left-2).
+    ctx.fillText(secVal.toFixed(1), pad.left - 14, y + 3);
   }
 
-  // Y-axis label (rotated)
+  // Y-axis label (rotated) — pushed further left to clear the bar + numeric labels
   ctx.save();
   ctx.font = `9px 'DM Mono', monospace`;
   ctx.fillStyle = 'rgba(200,240,58,0.55)';
   ctx.textAlign = 'center';
-  ctx.translate(pad.left - 38, pad.top + plotH / 2);
+  ctx.translate(pad.left - 48, pad.top + plotH / 2);
   ctx.rotate(-Math.PI / 2);
   ctx.fillText('SECONDS', 0, 0);
   ctx.restore();
 
-  // ─── GRADIENT BAR (right side, always shown) ──────────────────
+  // ─── GRADIENT BAR (left side, adjacent to the Y-axis labels) ──
+  // The bar visually replaces the axis line itself, hugging the plot's left
+  // edge. Y-axis labels sit just left of the bar; the rotated "SECONDS"
+  // label is further left still. No text labels on the bar — a dot at any Y
+  // position is colored by exactly the bar's color at that Y, so the
+  // adjacency makes the mapping self-evident.
   const barW = 6;
-  const barX = pad.left + plotW + 12;
+  const barX = pad.left - 8;
   const barTopY = pad.top;
   const barBotY = pad.top + plotH;
   const gradTopY = Math.max(barTopY, Math.min(barBotY, yPos(dotHi)));
@@ -2138,14 +2163,6 @@ function renderDotPlot(animT) {
     ctx.fillRect(barX, gradBotY, barW, barBotY - gradBotY);
   }
   ctx.restore();
-
-  ctx.font = `10px 'DM Mono', monospace`;
-  ctx.fillStyle = 'rgba(200,240,58,0.65)';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(`≥${dotHi.toFixed(1)}s`, barX + barW + 4, gradTopY);
-  ctx.fillText(`≤${dotLo.toFixed(1)}s`, barX + barW + 4, gradBotY);
-  ctx.textBaseline = 'alphabetic';
 
   // ─── X-AXIS LABELS (time only — fades out as the dots flow into the histogram) ───
   ctx.textAlign = 'center';
