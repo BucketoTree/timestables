@@ -1191,10 +1191,11 @@ function selectAxis(axis) {
   if (activeAxes.has(axis)) {
     activeAxes.delete(axis);
   } else {
-    if (activeAxes.size === 1) {
-      const other = axis === 'a' ? 'b' : 'a';
-      ranges[axis] = new Set(ranges[other]);
-    }
+    // Reactivating an axis: keep its existing range as-is rather than copying
+    // from the other axis. The old copy-from-other behavior clobbered the
+    // user's settings — e.g. you'd set axisA to {1}, then click axisB to
+    // bring it back, and axisB would get overwritten to {1} too instead of
+    // staying at whatever it was. Now reactivation just toggles visibility.
     activeAxes.add(axis);
   }
   if (activeAxes.has(axis)) activeAxis = axis;
