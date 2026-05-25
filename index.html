@@ -1112,7 +1112,12 @@ function pickQuestion() {
       weight *= suppression;
     }
     if (card.lastTimeRatio != null) {
-      weight += Math.max(0, card.lastTimeRatio - 1) * 3;
+      // A slow answer (timeRatio > 1) adds a small bias, not a strong one.
+      // Was * 3 — too aggressive: a single 2x-avg answer pushed a question
+      // back into rotation immediately after the next question. * 1 still
+      // surfaces consistently-slow variants more often without making one
+      // slow answer dominate.
+      weight += Math.max(0, card.lastTimeRatio - 1) * 1;
     }
     if (card.lastAttempts > 1) weight += (card.lastAttempts - 1) * 2;
     // Suppress variants already attempted this session — favors breadth.
@@ -1131,15 +1136,30 @@ function pickQuestion() {
     candidates.push({ a, b, mode, weight });
   }
 
-  for (const a of aVals) {
-    for (const b of bVals) {
-      if (gameModes.has('normal')) {
-        // Normal is symmetric — only generate one orientation per unordered pair
-        if (a <= b) pushCandidate(a, b, 'normal');
+  // Normal mode is symmetric (a × b = b × a), so each unordered pair shows
+  // up as one variant with key n:lo,hi. We need to consider every pair where
+  // ONE side comes from aVals and the OTHER from bVals — so iterate both
+  // directions and dedupe by canonical pair. A naive `a∈aVals, b∈bVals, if
+  // a≤b` enumeration would miss pairs like (1,9) when aVals=[9] and bVals
+  // includes 1, because the canonical form has 1 in the a-slot which never
+  // gets iterated.
+  const seenNormal = new Set();
+  if (gameModes.has('normal')) {
+    for (const x of aVals) {
+      for (const y of bVals) {
+        const lo = Math.min(x, y), hi = Math.max(x, y);
+        const key = `${lo},${hi}`;
+        if (seenNormal.has(key)) continue;
+        seenNormal.add(key);
+        pushCandidate(lo, hi, 'normal');
       }
-      if (gameModes.has('factors')) {
-        // Factor mode: known factor is `a`. Generate both orientations as distinct cards.
-        // (a,b) and (b,a) map to different srKeys (fr vs fc) when a != b.
+    }
+  }
+  if (gameModes.has('factors')) {
+    for (const a of aVals) {
+      for (const b of bVals) {
+        // Factor mode: known factor is `a`. (a,b) and (b,a) are distinct
+        // prompts (different known factor) so we generate both orientations.
         pushCandidate(a, b, 'factors');
       }
     }
