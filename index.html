@@ -406,6 +406,21 @@ canvas#statsDots {
 }
 .slider-thumb:hover { background: var(--accent); }
 .slider-thumb.dragging { background: var(--accent); }
+.slider-thumb-label {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: var(--text);
+  opacity: 0.85;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.slider-thumb.dragging .slider-thumb-label { opacity: 1; color: var(--accent); }
 
 .heatmap-cell.dimmed { opacity: 0.18; }
 .heatmap-cell.dimmed:hover { opacity: 0.18; }
@@ -643,8 +658,8 @@ body.custom-active #factorProduct {
           <div id="gradientBar" style="width:100%;height:10px;background:linear-gradient(to right,#c8f03a,#f1c40f,#ff8c00,#ff4d6d);border-radius:5px;"></div>
           <div id="sliderDimLeft"  style="display:none;position:absolute;height:10px;left:0;background:rgba(8,8,15,0.7);pointer-events:none;border-radius:5px 0 0 5px;"></div>
           <div id="sliderDimRight" style="display:none;position:absolute;height:10px;right:0;background:rgba(8,8,15,0.7);pointer-events:none;border-radius:0 5px 5px 0;"></div>
-          <div id="sliderThumbMin" class="slider-thumb" style="display:none;left:0%;"></div>
-          <div id="sliderThumbMax" class="slider-thumb" style="display:none;left:100%;"></div>
+          <div id="sliderThumbMin" class="slider-thumb" style="display:none;left:0%;"><span class="slider-thumb-label"></span></div>
+          <div id="sliderThumbMax" class="slider-thumb" style="display:none;left:100%;"><span class="slider-thumb-label"></span></div>
         </div>
         <span id="heatmapScaleHi">—</span>
         <span id="customPoolInfo" style="display:none;color:var(--accent);opacity:0.95;letter-spacing:2px;min-width:130px;text-align:right;font-size:13px;">POOL: 0</span>
@@ -1570,6 +1585,10 @@ function enterCustomMode() {
     overlay.style.display = 'block';
     renderHeatmap();
   }
+  // renderHeatmap populates heatmapScaleCache, which the labels need to map
+  // slider% → seconds. The earlier positionSliderThumbs ran before the cache
+  // was filled, so refresh the labels now.
+  updateSliderLabels();
   // Freeze the question-range / mode-count controls — they don't apply to
   // custom mode, which sources its questions from the heatmap pool instead.
   document.getElementById('topBar').classList.add('custom-frozen');
@@ -1611,6 +1630,32 @@ function positionSliderThumbs() {
   // band shows the gradient at full color while excluded ranges look muted.
   if (dimL) dimL.style.width = sliderLoPct + '%';
   if (dimR) dimR.style.width = (100 - sliderHiPct) + '%';
+  // Thumb labels — show the time threshold each handle represents so the user
+  // can target questions in a specific seconds-band rather than guessing
+  // from gradient color alone.
+  updateSliderLabels();
+}
+
+// Update the seconds label below each thumb. The labels map slider position
+// to actual avg-time using the gradient's lo/hi endpoints. Edge cases:
+//   - min at 0 means "include everything fastest" → "≤Xs" notation
+//   - max at 100 means "include everything slowest" → "≥Xs" notation
+function updateSliderLabels() {
+  const tMinLbl = document.querySelector('#sliderThumbMin .slider-thumb-label');
+  const tMaxLbl = document.querySelector('#sliderThumbMax .slider-thumb-label');
+  if (!tMinLbl || !tMaxLbl) return;
+  const { lo, hi } = heatmapScaleCache;
+  if (lo == null || hi == null) {
+    tMinLbl.textContent = '';
+    tMaxLbl.textContent = '';
+    return;
+  }
+  const loTime = sliderPctToTime(sliderLoPct);
+  const hiTime = sliderPctToTime(sliderHiPct);
+  // If a handle is at the extreme, the filter effectively saturates beyond
+  // the gradient endpoint — reflect that with ≤/≥.
+  tMinLbl.textContent = sliderLoPct <= 0.5 ? `≤${loTime.toFixed(2)}s` : `${loTime.toFixed(2)}s`;
+  tMaxLbl.textContent = sliderHiPct >= 99.5 ? `≥${hiTime.toFixed(2)}s` : `${hiTime.toFixed(2)}s`;
 }
 
 // Map a slider position [0..100] to a real avg-time threshold using the
@@ -1679,22 +1724,9 @@ function updatePoolPreview() {
   // green once you've got enough.
   const info = document.getElementById('customPoolInfo');
   if (info) {
-    // When under the 10-variant minimum, show "POOL: 7 / 10" so the missing
-    // count is visible inline. Above the threshold, drop the "/ 10" since
-    // there's no longer a goal to hit.
-    if (customPool.length < 10) {
-      info.textContent = `POOL: ${customPool.length} / 10`;
-      info.style.color = 'var(--accent2)';
-    } else {
-      info.textContent = `POOL: ${customPool.length}`;
-      info.style.color = 'var(--accent)';
-      // If a "need N more" hint was up, hide it — the constraint is now met.
-      const hintEl = document.getElementById('startHint');
-      if (hintEl && hintEl.style.opacity !== '0') {
-        hintEl.style.opacity = '0';
-        if (startHintTimer) { clearTimeout(startHintTimer); startHintTimer = null; }
-      }
-    }
+    // No minimum pool size — just show the current count.
+    info.textContent = `POOL: ${customPool.length}`;
+    info.style.color = 'var(--accent)';
   }
   // Preview: keep the previously-chosen entry if it's still in the pool, so
   // dragging the slider doesn't make the preview number flicker. Pick a new
@@ -1763,15 +1795,11 @@ function variantToDisplay(q) {
 
 
 // ── SETUP / IN-GAME ANSWER HANDLERS ──────────────────────────
-// In custom mode the pool must hold at least 10 distinct variants before a
-// session can start — fewer than that means the session-end commit check
-// (SESSION_PAIR_THRESHOLD) would discard the attempts, so the heatmap and
-// stats wouldn't reflect the practice. Better to block the start outright.
+// Custom mode used to require a minimum pool size, but the session-commit
+// threshold (SESSION_PAIR_THRESHOLD = 5) is now lenient enough that small
+// pools still produce useful stats — and people sometimes want to drill just
+// 1-2 specific questions, which is a legitimate use case.
 function canStartGame() {
-  if (customMode && customPool.length < 10) {
-    showStartHint(`Need ${10 - customPool.length} more in pool`);
-    return false;
-  }
   return true;
 }
 
@@ -1840,6 +1868,20 @@ function setupAnswerKey(e) {
   if (e.key === 'Tab' || e.key === 'Enter') {
     e.preventDefault();
     if (isPlaying) endSession();
+    return;
+  }
+  // Mac numpad "Clear" key — browsers don't map it to anything by default,
+  // so the input ignores it. Treat it as Backspace so the numpad alone is
+  // a complete one-handed input device (digits + delete).
+  if (e.key === 'Clear') {
+    e.preventDefault();
+    const inp = e.target;
+    if (inp && inp.value.length > 0) {
+      inp.value = inp.value.slice(0, -1);
+      // Manually fire the input handler — programmatic value changes don't
+      // dispatch an `input` event, so the answer-check logic wouldn't run.
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   }
 }
 
