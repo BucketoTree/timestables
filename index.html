@@ -2638,6 +2638,13 @@ function attachHeatmapTooltip(grid) {
   const tip = ensureTooltipEl();
   // Use a single delegated listener on the grid — cheaper than 210 per-cell listeners
   grid.onmousemove = (e) => {
+    // While drag-toggling, suppress tooltips and apply the drag op to any
+    // newly-entered variant region instead.
+    if (grid.__dragState) {
+      handleDragMove(e);
+      hmTooltipEl.style.display = 'none';
+      return;
+    }
     const cell = e.target.closest('.heatmap-cell.has-data');
     if (!cell) { hmTooltipEl.style.display = 'none'; return; }
     const html = cell.getAttribute('data-tip') || '';
@@ -2656,42 +2663,82 @@ function attachHeatmapTooltip(grid) {
   };
   grid.onmouseleave = () => { hmTooltipEl.style.display = 'none'; };
 
-  // Click handler — only active in custom mode. Hit-tests which variant region
-  // of the cell was clicked and toggles that variant's manual override.
-  grid.onclick = (e) => {
-    if (!customMode) return;
+  // Drag-to-toggle in custom mode. mousedown picks up the variant region under
+  // the cursor and decides whether the drag will INCLUDE or EXCLUDE (the
+  // inverse of the starting region's current state). mousemove applies the
+  // same operation to any other variant regions the cursor enters. mouseup
+  // ends the drag. This matches the number-row marquee pattern and lets the
+  // user paint large pool selections with one motion.
+
+  // Hit-test a mouse event to identify the variant region (or null if none).
+  // Returns { r, c, variant, fullKey, exists } or null if not over a data cell.
+  function hitTestVariant(e) {
     const cell = e.target.closest('.heatmap-cell.has-data');
-    if (!cell) return;
+    if (!cell) return null;
     const cellKey = cell.dataset.cell;
-    if (!cellKey) return;
+    if (!cellKey) return null;
     const [r, c] = cellKey.split(',').map(Number);
     const isSquare = r === c;
-    // Position within cell, normalized 0..10 to match the polygon viewBox
     const rect = cell.getBoundingClientRect();
     const bx = ((e.clientX - rect.left) / rect.width) * 10;
     const by = ((e.clientY - rect.top)  / rect.height) * 10;
-    // Quadrants of the cell (split by the two diagonals y=x and y=10-x):
-    //   top    (by < bx AND by < 10-bx) → fr
-    //   right  (by < bx AND by > 10-bx) → fc  (or fr on squares)
-    //   bottom (by > bx AND by > 10-bx) → n
-    //   left   (by > bx AND by < 10-bx) → n
     let variant;
-    if (by < bx && by < 10 - bx)              variant = 'fr';
-    else if (by < bx)                          variant = isSquare ? 'fr' : 'fc';
-    else                                       variant = 'n';
-    // Only toggle if data actually exists for that variant — otherwise the
-    // click would create a phantom pool entry.
+    if (by < bx && by < 10 - bx)        variant = 'fr';
+    else if (by < bx)                    variant = isSquare ? 'fr' : 'fc';
+    else                                 variant = 'n';
     const prefix = variant === 'n' ? 'n:' : (variant === 'fr' ? 'fr:' : 'fc:');
     const dataset = statsForPrefix(prefix, heatmapWindow);
-    if (!dataset.get(cellKey)) return;
+    const exists = !!dataset.get(cellKey);
     const fullKey = prefix + cellKey;
-    // Toggle: if currently in pool → exclude; else → include.
-    const currentlyIn = customPool.some(q =>
-      q.a === r && q.b === c && q.variant === variant);
-    manualVariantOverrides.set(fullKey, !currentlyIn);
+    return { r, c, variant, fullKey, exists };
+  }
+
+  // Apply the current drag operation to a variant region, but only if it
+  // hasn't been visited this drag and the variant has actual data.
+  function applyDragToRegion(hit) {
+    const ds = grid.__dragState;
+    if (!ds || !hit || !hit.exists) return;
+    if (ds.visited.has(hit.fullKey)) return;
+    ds.visited.add(hit.fullKey);
+    const shouldInclude = (ds.op === 'include');
+    manualVariantOverrides.set(hit.fullKey, shouldInclude);
     rebuildCustomPool();
     updatePoolPreview();
+  }
+
+  function handleDragMove(e) {
+    const hit = hitTestVariant(e);
+    if (hit) applyDragToRegion(hit);
+  }
+
+  grid.onmousedown = (e) => {
+    if (!customMode) return;
+    if (e.button !== 0) return;  // left button only
+    const hit = hitTestVariant(e);
+    if (!hit || !hit.exists) return;
+    e.preventDefault();
+    // Decide the drag op based on the starting region's current state:
+    // currently-in → the drag EXCLUDES, currently-out → the drag INCLUDES.
+    const currentlyIn = customPool.some(q =>
+      q.a === hit.r && q.b === hit.c && q.variant === hit.variant);
+    grid.__dragState = {
+      op: currentlyIn ? 'exclude' : 'include',
+      visited: new Set(),
+    };
+    applyDragToRegion(hit);
   };
+}
+
+// One-time window listener — releasing the mouse anywhere ends the drag.
+// Defined outside attachHeatmapTooltip so it isn't re-registered on each
+// heatmap rerender. The dragState lives on the grid element itself so it
+// survives rerenders (which would otherwise blow away a local variable).
+if (!window.__hmDragMouseupBound) {
+  window.__hmDragMouseupBound = true;
+  window.addEventListener('mouseup', () => {
+    const grid = document.getElementById('heatmapGrid');
+    if (grid) grid.__dragState = null;
+  });
 }
 
 // ── PAUSE ────────────────────────────────────────────────────
