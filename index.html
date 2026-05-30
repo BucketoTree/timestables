@@ -950,7 +950,7 @@ function getCard(a, b, mode) {
 // per-pair buffer. At session end, if the diversity check passes, we merge the
 // buffer into the persistent attemptsByPair store and trim to ATTEMPTS_CAP per
 // pair. If it fails, the buffer is thrown away.
-const SESSION_PAIR_THRESHOLD = 5;
+const SESSION_PAIR_THRESHOLD = 10;
 let sessionAttemptsBuffer = {};  // { srKey: [[t, secs, correct], ...] }
 
 function recordAttempt(a, b, correct, secs, mode) {
